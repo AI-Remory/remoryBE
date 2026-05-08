@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.models.deletion import DeletionStatus, DeletionTargetType
 from app.schemas.common import TimestampMixin
@@ -23,5 +23,4 @@ class DeletionRequestResponse(TimestampMixin):
     processed_at: Optional[datetime]
     error_message: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

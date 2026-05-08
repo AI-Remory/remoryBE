@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.sharing import GroupMemberRole, SharePermission
 from app.models.storybook import StoryBookVisibility
@@ -22,8 +22,7 @@ class ShareLinkResponse(TimestampMixin):
     disabled_at: Optional[datetime]
     share_url: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ShareLinkDisableResponse(BaseModel):
@@ -58,15 +57,13 @@ class MemoryGroupResponse(TimestampMixin):
     description: Optional[str]
     deleted_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MemoryGroupDetailResponse(MemoryGroupResponse):
     my_role: GroupMemberRole
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class GroupMemberCreateRequest(BaseModel):
@@ -81,8 +78,7 @@ class GroupMemberResponse(TimestampMixin):
     role: GroupMemberRole
     deleted_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class GroupStoryBookResponse(BaseModel):
@@ -92,8 +88,7 @@ class GroupStoryBookResponse(BaseModel):
     shared_by: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class GroupStoryBookListItemResponse(BaseModel):
@@ -103,5 +98,4 @@ class GroupStoryBookListItemResponse(BaseModel):
     visibility: StoryBookVisibility
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

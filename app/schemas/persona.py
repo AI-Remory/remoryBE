@@ -1,6 +1,6 @@
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.persona import PersonaStatus
 from app.schemas.common import TimestampMixin
@@ -17,8 +17,7 @@ class PersonaStatusResponse(BaseModel):
     target_id: int
     status: PersonaStatus
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PersonaVoiceProfileResponse(TimestampMixin):
@@ -32,8 +31,7 @@ class PersonaVoiceProfileResponse(TimestampMixin):
     voice_name: Optional[str]
     metadata: Optional[dict[str, Any]] = Field(default=None, validation_alias="profile_metadata")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PersonaResponse(TimestampMixin):
@@ -48,8 +46,7 @@ class PersonaResponse(TimestampMixin):
     is_voice_profile_created: bool
     is_consent_required: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PersonaDetailResponse(PersonaResponse):

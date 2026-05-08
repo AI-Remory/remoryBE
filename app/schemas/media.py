@@ -1,11 +1,12 @@
 from typing import Optional
-from pydantic import BaseModel
-from app.schemas.common import TimestampMixin
+
+from pydantic import BaseModel, ConfigDict
+
 from app.models.media import MediaType
+from app.schemas.common import TimestampMixin
 
 
 class TargetMediaResponse(TimestampMixin):
-    """Target Media 응답"""
     id: int
     target_id: int
     uploaded_by: int
@@ -18,12 +19,10 @@ class TargetMediaResponse(TimestampMixin):
     duration_seconds: Optional[int]
     is_deleted: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MediaUploadResponse(BaseModel):
-    """파일 업로드 응답"""
     file_id: int
     target_id: int
     uploaded_by: int
@@ -37,6 +36,4 @@ class MediaUploadResponse(BaseModel):
 
 
 class MediaDeleteResponse(BaseModel):
-    """파일 삭제 응답"""
     message: str = "Media deleted successfully"
-

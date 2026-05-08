@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.interview import InterviewStatus, InterviewType
 from app.schemas.common import TimestampMixin
@@ -32,8 +32,7 @@ class AIInterviewAnswerResponse(TimestampMixin):
     answer_audio_path: Optional[str]
     deleted_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AIInterviewQuestionResponse(BaseModel):
@@ -45,8 +44,7 @@ class AIInterviewQuestionResponse(BaseModel):
     created_at: datetime
     answers: list[AIInterviewAnswerResponse] = Field(default_factory=list)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AIInterviewSessionResponse(TimestampMixin):
@@ -59,8 +57,7 @@ class AIInterviewSessionResponse(TimestampMixin):
     status: InterviewStatus
     deleted_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AIInterviewSessionDetailResponse(AIInterviewSessionResponse):

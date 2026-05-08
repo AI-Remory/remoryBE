@@ -1,10 +1,12 @@
 import os
 from typing import List
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """프로젝트 전역 설정"""
+
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
 
     # App
     APP_NAME: str = "Remory API"
@@ -38,10 +40,5 @@ class Settings(BaseSettings):
     def DATABASE_URL(self) -> str:
         """MySQL 연결 문자열 생성"""
         return f"mysql+pymysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DB}?charset=utf8mb4"
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-
 
 settings = Settings()

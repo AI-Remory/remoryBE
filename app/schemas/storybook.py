@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.storybook import StoryBookSourceType, StoryBookStatus, StoryBookVisibility
 from app.schemas.common import TimestampMixin
@@ -23,8 +23,7 @@ class StoryChapterResponse(TimestampMixin):
     order_index: int
     deleted_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class StoryBookResponse(TimestampMixin):
@@ -39,8 +38,7 @@ class StoryBookResponse(TimestampMixin):
     visibility: StoryBookVisibility
     deleted_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class StoryBookDetailResponse(StoryBookResponse):

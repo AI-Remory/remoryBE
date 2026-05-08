@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.schemas.common import TimestampMixin
 
@@ -29,8 +29,7 @@ class PhotoMemoryResponse(TimestampMixin):
     emotion_keywords: Optional[list[str]]
     deleted_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PhotoMemoryDeleteResponse(BaseModel):

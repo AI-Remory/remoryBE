@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.chat import MessageType, SenderType
 from app.schemas.common import TimestampMixin
@@ -18,8 +18,7 @@ class PersonaChatResponse(TimestampMixin):
     title: Optional[str]
     deleted_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PersonaMessageCreateRequest(BaseModel):
@@ -39,8 +38,7 @@ class PersonaMessageResponse(BaseModel):
     created_at: datetime
     deleted_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PersonaMessagePairResponse(BaseModel):

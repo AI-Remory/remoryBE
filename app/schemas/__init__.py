@@ -1,2 +1,2 @@
-"""Pydantic 스키마 모듈"""
+"""Pydantic schema modules."""
 
