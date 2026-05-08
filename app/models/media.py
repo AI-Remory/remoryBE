@@ -7,7 +7,7 @@ from app.models.base import BaseModel
 class MediaType(str, enum.Enum):
     """미디어 타입"""
     IMAGE = "image"
-    AUDIO = "audio"
+    VOICE = "voice"
 
 
 class TargetMedia(BaseModel):
@@ -16,8 +16,10 @@ class TargetMedia(BaseModel):
 
     id = Column(Integer, primary_key=True, index=True)
     target_id = Column(Integer, ForeignKey("targets.id"), nullable=False, index=True)
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     media_type = Column(Enum(MediaType), nullable=False)
     original_filename = Column(String(512), nullable=False)
+    stored_filename = Column(String(512), nullable=False)
     file_path = Column(String(512), nullable=False)
     mime_type = Column(String(100), nullable=False)
     file_size = Column(BigInteger, nullable=False)
@@ -26,4 +28,4 @@ class TargetMedia(BaseModel):
 
     # 관계
     target = relationship("Target", back_populates="media")
-
+    uploader = relationship("User", back_populates="uploaded_media")

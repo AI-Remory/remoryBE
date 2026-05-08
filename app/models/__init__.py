@@ -1,6 +1,7 @@
 """SQLAlchemy 모델 모듈"""
 from app.models.base import Base, BaseModel
 from app.models.user import User
+from app.models.auth import RefreshToken
 from app.models.target import Target, TargetType
 from app.models.media import TargetMedia, MediaType
 from app.models.persona import Persona, PersonaStatus, PersonaVoiceProfile
@@ -15,6 +16,7 @@ __all__ = [
     "Base",
     "BaseModel",
     "User",
+    "RefreshToken",
     "Target",
     "TargetType",
     "TargetMedia",
@@ -43,4 +45,3 @@ __all__ = [
     "DeletionItemType",
     "DeletionStatus",
 ]
-

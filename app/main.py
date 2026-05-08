@@ -2,12 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.settings import settings
-from app.core.database import engine
-from app.models import Base
 from app.api.v1.router import api_v1_router
-
-# DB 테이블 생성
-Base.metadata.create_all(bind=engine)
 
 # FastAPI 앱 생성
 app = FastAPI(
@@ -43,4 +38,3 @@ if __name__ == "__main__":
         port=8000,
         reload=settings.DEBUG,
     )
-

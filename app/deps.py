@@ -18,8 +18,5 @@ async def get_current_user(
 async def auth_user(
     user: User = Depends(get_current_user),
 ) -> User:
-    """인증된 사용자만 접근 가능 (의존성)"""
-    if not user.is_active:
-        raise Exception("User is inactive")
+    """인증된 사용자 의존성 alias"""
     return user
-

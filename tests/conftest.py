@@ -1,12 +1,12 @@
 """pytest 설정 및 공통 fixture"""
 import pytest
-import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 
 # 테스트 DB (SQLite 인메모리)
-TEST_SQLALCHEMY_DB_URL = "sqlite:///:memory:"
+TEST_SQLALCHEMY_DB_URL = "sqlite://"
 
 from app.models import Base
 from app.core.database import get_db
@@ -15,7 +15,8 @@ from app.main import app
 # 테스트 DB 엔진
 engine = create_engine(
     TEST_SQLALCHEMY_DB_URL,
-    connect_args={"check_same_thread": False}
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
 )
 
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -34,8 +35,12 @@ def override_get_db():
 def db():
     """테스트 DB fixture"""
     Base.metadata.create_all(bind=engine)
-    yield TestingSessionLocal()
-    Base.metadata.drop_all(bind=engine)
+    session = TestingSessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+        Base.metadata.drop_all(bind=engine)
 
 
 @pytest.fixture(scope="function")
