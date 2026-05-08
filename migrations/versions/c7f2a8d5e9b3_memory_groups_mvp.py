@@ -17,13 +17,30 @@ branch_labels = None
 depends_on = None
 
 
+def _drop_foreign_keys_for_columns(table_name: str, column_names: set[str]) -> None:
+    """Drop foreign keys that are bound to the given columns.
+
+    MySQL auto-generates FK names for unnamed constraints, so the live name may
+    differ across local and CI databases.
+    """
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    for foreign_key in inspector.get_foreign_keys(table_name):
+        constrained_columns = set(foreign_key.get("constrained_columns") or [])
+        constraint_name = foreign_key.get("name")
+        if constraint_name and constrained_columns == column_names:
+            op.drop_constraint(constraint_name, table_name, type_="foreignkey")
+
+
 def upgrade() -> None:
+    _drop_foreign_keys_for_columns('memory_groups', {'creator_id'})
     op.drop_index(op.f('ix_memory_groups_creator_id'), table_name='memory_groups')
     op.alter_column('memory_groups', 'creator_id',
                     existing_type=sa.Integer(),
                     new_column_name='owner_id',
                     existing_nullable=False)
     op.create_index(op.f('ix_memory_groups_owner_id'), 'memory_groups', ['owner_id'], unique=False)
+    op.create_foreign_key('fk_memory_groups_owner_id_users', 'memory_groups', 'users', ['owner_id'], ['id'])
     op.add_column('memory_groups', sa.Column('deleted_at', sa.DateTime(), nullable=True))
     op.drop_index(op.f('ix_memory_groups_group_code'), table_name='memory_groups')
     op.drop_column('memory_groups', 'group_code')
@@ -93,9 +110,11 @@ def downgrade() -> None:
     op.alter_column('memory_groups', 'group_code', existing_type=sa.String(length=20), nullable=False)
     op.create_index(op.f('ix_memory_groups_group_code'), 'memory_groups', ['group_code'], unique=True)
     op.drop_column('memory_groups', 'deleted_at')
+    _drop_foreign_keys_for_columns('memory_groups', {'owner_id'})
     op.drop_index(op.f('ix_memory_groups_owner_id'), table_name='memory_groups')
     op.alter_column('memory_groups', 'owner_id',
                     existing_type=sa.Integer(),
                     new_column_name='creator_id',
                     existing_nullable=False)
     op.create_index(op.f('ix_memory_groups_creator_id'), 'memory_groups', ['creator_id'], unique=False)
+    op.create_foreign_key('fk_memory_groups_creator_id_users', 'memory_groups', 'users', ['creator_id'], ['id'])

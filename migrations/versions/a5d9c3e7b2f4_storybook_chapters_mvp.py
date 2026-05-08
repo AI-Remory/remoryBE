@@ -16,6 +16,22 @@ branch_labels = None
 depends_on = None
 
 
+def _drop_foreign_keys_for_columns(table_name: str, column_names: set[str]) -> None:
+    """Drop foreign keys that are bound to the given columns.
+
+    MySQL auto-generates FK names when Alembic does not specify one. Looking up
+    the live constraint name keeps this migration valid across fresh databases
+    and CI environments.
+    """
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    for foreign_key in inspector.get_foreign_keys(table_name):
+        constrained_columns = set(foreign_key.get("constrained_columns") or [])
+        constraint_name = foreign_key.get("name")
+        if constraint_name and constrained_columns == column_names:
+            op.drop_constraint(constraint_name, table_name, type_="foreignkey")
+
+
 def upgrade() -> None:
     op.add_column('storybooks', sa.Column('photo_memory_id', sa.Integer(), nullable=True))
     op.add_column('storybooks', sa.Column('interview_session_id', sa.Integer(), nullable=True))
@@ -37,7 +53,7 @@ def upgrade() -> None:
     op.drop_column('storybooks', 'description')
     op.drop_column('storybooks', 'is_published')
     op.drop_column('storybooks', 'is_deleted')
-    op.drop_constraint('storybooks_ibfk_2', 'storybooks', type_='foreignkey')
+    _drop_foreign_keys_for_columns('storybooks', {'target_id'})
     op.drop_index(op.f('ix_storybooks_target_id'), table_name='storybooks')
     op.drop_column('storybooks', 'target_id')
 
