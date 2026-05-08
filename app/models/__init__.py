@@ -24,7 +24,7 @@ from app.models.storybook import (
 )
 from app.models.sharing import GroupMember, GroupMemberRole, GroupStoryBook, MemoryGroup, ShareLink, SharePermission
 from app.models.consent import ConsentLog, ConsentType
-from app.models.deletion import DeletionRequest, DeletionItemType, DeletionStatus
+from app.models.deletion import DeletionItemType, DeletionRequest, DeletionStatus, DeletionTargetType
 
 __all__ = [
     "Base",
@@ -64,5 +64,6 @@ __all__ = [
     "ConsentType",
     "DeletionRequest",
     "DeletionItemType",
+    "DeletionTargetType",
     "DeletionStatus",
 ]

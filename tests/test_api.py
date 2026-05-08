@@ -1034,3 +1034,171 @@ class TestMemoryGroup:
         )
         assert response.status_code == 403
 
+
+class TestDeletionRequest:
+    """DeletionRequest API tests."""
+
+    @pytest.fixture
+    def deletion_context(self, client):
+        user = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "deleteuser@example.com",
+                "nickname": "deleteuser",
+                "password": "securepassword123",
+            },
+        ).json()
+        other = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "otherdelete@example.com",
+                "nickname": "otherdelete",
+                "password": "securepassword123",
+            },
+        ).json()
+        headers = {"Authorization": f"Bearer {user['access_token']}"}
+        other_headers = {"Authorization": f"Bearer {other['access_token']}"}
+
+        target = client.post(
+            "/api/v1/targets",
+            json={"name": "Delete Target", "description": "to delete", "target_type": "other"},
+            headers=headers,
+        ).json()
+        photo = client.post(
+            "/api/v1/photo-memories",
+            data={"title": "Delete Photo"},
+            files={"file": ("delete.jpg", b"fake-image-data", "image/jpeg")},
+            headers=headers,
+        ).json()
+        session = client.post(
+            "/api/v1/interviews",
+            json={"session_type": "SELF_STORY"},
+            headers=headers,
+        ).json()
+        question = client.post(
+            f"/api/v1/interviews/{session['id']}/questions",
+            json={},
+            headers=headers,
+        ).json()
+        client.post(
+            f"/api/v1/interviews/{session['id']}/answers",
+            json={"question_id": question["id"], "answer_text": "Delete story answer."},
+            headers=headers,
+        )
+        storybook = client.post(
+            "/api/v1/storybooks",
+            json={"title": "Delete Story", "interview_session_id": session["id"]},
+            headers=headers,
+        ).json()
+        share_link = client.post(
+            f"/api/v1/storybooks/{storybook['id']}/share-links",
+            json={},
+            headers=headers,
+        ).json()
+        return {
+            "headers": headers,
+            "other_headers": other_headers,
+            "target_id": target["id"],
+            "photo_id": photo["id"],
+            "photo_path": photo["file_path"],
+            "storybook_id": storybook["id"],
+            "share_link_id": share_link["id"],
+            "share_token": share_link["token"],
+        }
+
+    def test_delete_photo_memory_removes_file_and_records_request(self, client, deletion_context):
+        backend_root = Path(__file__).resolve().parents[1]
+        assert (backend_root / deletion_context["photo_path"]).exists()
+
+        response = client.post(
+            "/api/v1/deletion-requests",
+            json={
+                "target_type": "PHOTO_MEMORY",
+                "target_id": deletion_context["photo_id"],
+                "reason": "remove sensitive photo",
+            },
+            headers=deletion_context["headers"],
+        )
+        assert response.status_code == 201
+        payload = response.json()
+        assert payload["status"] == "COMPLETED"
+        assert payload["processed_at"]
+        assert payload["error_message"] is None
+        assert not (backend_root / deletion_context["photo_path"]).exists()
+
+        deleted_photo = client.get(
+            f"/api/v1/photo-memories/{deletion_context['photo_id']}",
+            headers=deletion_context["headers"],
+        )
+        assert deleted_photo.status_code == 404
+
+        request_detail = client.get(f"/api/v1/deletion-requests/{payload['id']}", headers=deletion_context["headers"])
+        assert request_detail.status_code == 200
+        assert request_detail.json()["id"] == payload["id"]
+
+    def test_delete_storybook_soft_deletes_storybook_and_blocks_public_share(self, client, deletion_context):
+        response = client.post(
+            "/api/v1/deletion-requests",
+            json={"target_type": "STORYBOOK", "target_id": deletion_context["storybook_id"]},
+            headers=deletion_context["headers"],
+        )
+        assert response.status_code == 201
+        assert response.json()["status"] == "COMPLETED"
+
+        storybook = client.get(
+            f"/api/v1/storybooks/{deletion_context['storybook_id']}",
+            headers=deletion_context["headers"],
+        )
+        assert storybook.status_code == 404
+
+        public_share = client.get(f"/api/v1/share/{deletion_context['share_token']}")
+        assert public_share.status_code == 404
+
+    def test_delete_share_link_disables_link(self, client, deletion_context):
+        response = client.post(
+            "/api/v1/deletion-requests",
+            json={"target_type": "SHARE_LINK", "target_id": deletion_context["share_link_id"]},
+            headers=deletion_context["headers"],
+        )
+        assert response.status_code == 201
+        assert response.json()["status"] == "COMPLETED"
+
+        public_share = client.get(f"/api/v1/share/{deletion_context['share_token']}")
+        assert public_share.status_code == 403
+
+    def test_other_user_cannot_create_or_read_deletion_request(self, client, deletion_context):
+        denied_create = client.post(
+            "/api/v1/deletion-requests",
+            json={"target_type": "TARGET", "target_id": deletion_context["target_id"]},
+            headers=deletion_context["other_headers"],
+        )
+        assert denied_create.status_code == 403
+
+        created = client.post(
+            "/api/v1/deletion-requests",
+            json={"target_type": "TARGET", "target_id": deletion_context["target_id"]},
+            headers=deletion_context["headers"],
+        ).json()
+        denied_read = client.get(
+            f"/api/v1/deletion-requests/{created['id']}",
+            headers=deletion_context["other_headers"],
+        )
+        assert denied_read.status_code == 403
+
+    def test_deletion_request_list_is_current_user_only_newest_first(self, client, deletion_context):
+        first = client.post(
+            "/api/v1/deletion-requests",
+            json={"target_type": "SHARE_LINK", "target_id": deletion_context["share_link_id"]},
+            headers=deletion_context["headers"],
+        ).json()
+        second = client.post(
+            "/api/v1/deletion-requests",
+            json={"target_type": "ACCOUNT", "target_id": 1},
+            headers=deletion_context["headers"],
+        ).json()
+
+        requests = client.get("/api/v1/deletion-requests", headers=deletion_context["headers"])
+        assert requests.status_code == 200
+        ids = [item["id"] for item in requests.json()]
+        assert ids[:2] == [second["id"], first["id"]]
+

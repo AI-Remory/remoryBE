@@ -1,41 +1,50 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Enum, Boolean, Text
-from sqlalchemy.orm import relationship
 import enum
+
+from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, Text
+from sqlalchemy.orm import relationship
+
 from app.models.base import BaseModel
 
 
-class DeletionItemType(str, enum.Enum):
-    """삭제 항목 타입"""
-    PHOTO = "photo"
-    VOICE = "voice"
-    MESSAGE = "message"
-    STORYBOOK = "storybook"
-    PERSONA = "persona"
-    CHAT = "chat"
+class DeletionTargetType(str, enum.Enum):
+    """Supported deletion target types."""
+
+    TARGET = "TARGET"
+    TARGET_MEDIA = "TARGET_MEDIA"
+    PERSONA = "PERSONA"
+    PERSONA_CHAT = "PERSONA_CHAT"
+    PERSONA_MESSAGE = "PERSONA_MESSAGE"
+    PHOTO_MEMORY = "PHOTO_MEMORY"
+    STORYBOOK = "STORYBOOK"
+    SHARE_LINK = "SHARE_LINK"
+    MEMORY_GROUP = "MEMORY_GROUP"
+    ACCOUNT = "ACCOUNT"
 
 
 class DeletionStatus(str, enum.Enum):
-    """삭제 상태"""
-    PENDING = "pending"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
+    """Deletion request status."""
+
+    REQUESTED = "REQUESTED"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
 
 
 class DeletionRequest(BaseModel):
-    """데이터 삭제 요청"""
+    """User data deletion request and processing record."""
+
     __tablename__ = "deletion_requests"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    item_type = Column(Enum(DeletionItemType), nullable=False)
-    item_id = Column(Integer, nullable=False)
-    status = Column(Enum(DeletionStatus), default=DeletionStatus.PENDING, nullable=False)
+    target_type = Column(Enum(DeletionTargetType), nullable=False)
+    target_id = Column(Integer, nullable=False)
     reason = Column(Text, nullable=True)
+    status = Column(Enum(DeletionStatus), default=DeletionStatus.REQUESTED, nullable=False)
+    processed_at = Column(DateTime, nullable=True)
     error_message = Column(Text, nullable=True)
-    file_paths = Column(String(2048), nullable=True)  # 삭제할 파일 경로들 (JSON)
-    is_deleted = Column(Boolean, default=False, nullable=False)
 
-    # 관계
     user = relationship("User", back_populates="deletion_requests")
 
+
+# Backward-compatible alias for older imports.
+DeletionItemType = DeletionTargetType
