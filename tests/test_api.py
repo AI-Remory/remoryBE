@@ -312,3 +312,96 @@ class TestPersona:
         response = client.post(f"/api/v1/targets/{target_id}/persona", headers=other_headers)
         assert response.status_code == 403
 
+
+class TestPersonaChat:
+    """PersonaChat and PersonaMessage API tests."""
+
+    @pytest.fixture
+    def persona_context(self, client):
+        user_data = {
+            "email": "chatuser@example.com",
+            "nickname": "chatuser",
+            "password": "securepassword123",
+        }
+        register = client.post("/api/v1/auth/register", json=user_data)
+        headers = {"Authorization": f"Bearer {register.json()['access_token']}"}
+
+        target = client.post(
+            "/api/v1/targets",
+            json={"name": "Dad", "description": "Enjoys practical advice", "target_type": "parent"},
+            headers=headers,
+        )
+        persona = client.post(
+            f"/api/v1/targets/{target.json()['id']}/persona",
+            headers=headers,
+        )
+        return {"headers": headers, "persona_id": persona.json()["id"]}
+
+    def test_create_list_chat_and_messages(self, client, persona_context):
+        headers = persona_context["headers"]
+        persona_id = persona_context["persona_id"]
+
+        chat_response = client.post(
+            f"/api/v1/personas/{persona_id}/chats",
+            json={"title": "First chat"},
+            headers=headers,
+        )
+        assert chat_response.status_code == 201
+        chat = chat_response.json()
+        assert chat["persona_id"] == persona_id
+        assert chat["title"] == "First chat"
+        assert chat["deleted_at"] is None
+
+        chats = client.get(f"/api/v1/personas/{persona_id}/chats", headers=headers)
+        assert chats.status_code == 200
+        assert len(chats.json()) == 1
+
+        message_response = client.post(
+            f"/api/v1/chats/{chat['id']}/messages",
+            json={"message_type": "TEXT", "content": "How should I remember this day?"},
+            headers=headers,
+        )
+        assert message_response.status_code == 201
+        payload = message_response.json()
+        assert payload["user_message"]["sender_type"] == "USER"
+        assert payload["user_message"]["is_ai_generated"] is False
+        assert payload["persona_message"]["sender_type"] == "PERSONA"
+        assert payload["persona_message"]["is_ai_generated"] is True
+
+        messages = client.get(f"/api/v1/chats/{chat['id']}/messages", headers=headers)
+        assert messages.status_code == 200
+        message_list = messages.json()
+        assert [message["sender_type"] for message in message_list] == ["USER", "PERSONA"]
+        assert message_list[0]["created_at"] <= message_list[1]["created_at"]
+
+    def test_other_user_cannot_access_persona_chat(self, client, persona_context):
+        persona_id = persona_context["persona_id"]
+        other_user = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "otherchat@example.com",
+                "nickname": "otherchat",
+                "password": "securepassword123",
+            },
+        )
+        other_headers = {"Authorization": f"Bearer {other_user.json()['access_token']}"}
+
+        chat_response = client.post(
+            f"/api/v1/personas/{persona_id}/chats",
+            json={"title": "Blocked"},
+            headers=other_headers,
+        )
+        assert chat_response.status_code == 403
+
+        owner_chat = client.post(
+            f"/api/v1/personas/{persona_id}/chats",
+            json={"title": "Owner chat"},
+            headers=persona_context["headers"],
+        )
+        message_response = client.post(
+            f"/api/v1/chats/{owner_chat.json()['id']}/messages",
+            json={"message_type": "TEXT", "content": "hello"},
+            headers=other_headers,
+        )
+        assert message_response.status_code == 403
+

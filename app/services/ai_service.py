@@ -96,5 +96,19 @@ class AIService:
         persona_name = persona_profile.get("persona_name", "Persona")
         return f"{persona_name}: I hear you. Tell me more about {user_message[:40]}."
 
+    @staticmethod
+    async def generate_mock_persona_reply(
+        user_message: str,
+        persona_profile: dict,
+    ) -> str:
+        """Generate a deterministic persona reply without calling an AI API."""
+        persona_name = persona_profile.get("persona_name") or "Persona"
+        speaking_style = persona_profile.get("speaking_style") or "warm and concise"
+        memory_summary = persona_profile.get("memory_summary") or "available memories"
+        return (
+            f"{persona_name}: I remember this through {memory_summary}. "
+            f"Speaking in a {speaking_style} style, I would say: {user_message[:80]}"
+        )
+
 
 ai_service = AIService()
