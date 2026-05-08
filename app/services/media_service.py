@@ -9,6 +9,8 @@ from app.models.media import TargetMedia, MediaType
 from app.models.target import Target
 from app.services.target_service import target_service
 from app.utils.exceptions import NotFoundException, ForbiddenException, ValidationException, FileUploadException
+from app.models.consent import ConsentType
+from app.services.consent_service import consent_service
 
 
 class MediaService:
@@ -74,6 +76,11 @@ class MediaService:
     ) -> TargetMedia:
         """타겟 미디어 업로드"""
         target_service.get_target_by_id(db, target_id, user_id)
+
+        if media_type == MediaType.IMAGE:
+            consent_service.check_consent(db, user_id, target_id, ConsentType.PHOTO_COLLECTION)
+        elif media_type == MediaType.VOICE:
+            consent_service.check_consent(db, user_id, target_id, ConsentType.VOICE_COLLECTION)
 
         stored_filename, file_size, file_path = MediaService._save_file(target_id, media_type, upload_file)
         media = TargetMedia(
