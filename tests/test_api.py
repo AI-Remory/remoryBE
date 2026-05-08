@@ -405,3 +405,106 @@ class TestPersonaChat:
         )
         assert message_response.status_code == 403
 
+
+class TestAIInterview:
+    """AI interview session API tests."""
+
+    @pytest.fixture
+    def interview_context(self, client):
+        user_data = {
+            "email": "interviewuser@example.com",
+            "nickname": "interviewuser",
+            "password": "securepassword123",
+        }
+        register = client.post("/api/v1/auth/register", json=user_data)
+        headers = {"Authorization": f"Bearer {register.json()['access_token']}"}
+
+        target = client.post(
+            "/api/v1/targets",
+            json={"name": "Aunt", "description": "Kind storyteller", "target_type": "other"},
+            headers=headers,
+        )
+        return {"headers": headers, "target_id": target.json()["id"]}
+
+    def test_create_question_answer_and_get_detail(self, client, interview_context):
+        headers = interview_context["headers"]
+        target_id = interview_context["target_id"]
+
+        session_response = client.post(
+            "/api/v1/interviews",
+            json={
+                "session_type": "TARGET_PROFILE",
+                "target_id": target_id,
+                "title": "Profile interview",
+            },
+            headers=headers,
+        )
+        assert session_response.status_code == 201
+        session = session_response.json()
+        assert session["session_type"] == "TARGET_PROFILE"
+        assert session["status"] == "IN_PROGRESS"
+        assert session["deleted_at"] is None
+
+        question_response = client.post(
+            f"/api/v1/interviews/{session['id']}/questions",
+            json={"question_type": "speaking_style"},
+            headers=headers,
+        )
+        assert question_response.status_code == 201
+        question = question_response.json()
+        assert question["question_text"] == "이 사람이 평소 자주 하던 말은 무엇인가요?"
+        assert question["order_index"] == 1
+
+        answer_response = client.post(
+            f"/api/v1/interviews/{session['id']}/answers",
+            json={"question_id": question["id"], "answer_text": "늘 괜찮다고 말해줬어요."},
+            headers=headers,
+        )
+        assert answer_response.status_code == 201
+        assert answer_response.json()["question_id"] == question["id"]
+
+        detail_response = client.get(f"/api/v1/interviews/{session['id']}", headers=headers)
+        assert detail_response.status_code == 200
+        detail = detail_response.json()
+        assert len(detail["questions"]) == 1
+        assert len(detail["questions"][0]["answers"]) == 1
+        assert detail["questions"][0]["answers"][0]["answer_text"] == "늘 괜찮다고 말해줬어요."
+
+    def test_self_story_session_can_be_created_without_target(self, client, interview_context):
+        response = client.post(
+            "/api/v1/interviews",
+            json={"session_type": "SELF_STORY", "title": "My story"},
+            headers=interview_context["headers"],
+        )
+        assert response.status_code == 201
+        assert response.json()["target_id"] is None
+
+    def test_target_profile_requires_target_id(self, client, interview_context):
+        response = client.post(
+            "/api/v1/interviews",
+            json={"session_type": "TARGET_PROFILE"},
+            headers=interview_context["headers"],
+        )
+        assert response.status_code == 422
+
+    def test_other_user_cannot_access_session(self, client, interview_context):
+        session_response = client.post(
+            "/api/v1/interviews",
+            json={"session_type": "SELF_STORY"},
+            headers=interview_context["headers"],
+        )
+        session_id = session_response.json()["id"]
+
+        other_user = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "otherinterview@example.com",
+                "nickname": "otherinterview",
+                "password": "securepassword123",
+            },
+        )
+        other_headers = {"Authorization": f"Bearer {other_user.json()['access_token']}"}
+
+        response = client.get(f"/api/v1/interviews/{session_id}", headers=other_headers)
+        assert response.status_code == 403
+

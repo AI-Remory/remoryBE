@@ -62,6 +62,34 @@ class AIService:
         return questions.get(interview_type, "What memory would you like to preserve?")
 
     @staticmethod
+    async def generate_mock_interview_question(
+        session_type: str,
+        order_index: int = 1,
+        context: dict | None = None,
+    ) -> str:
+        """Generate a deterministic interview question without calling an AI API."""
+        questions = {
+            "TARGET_PROFILE": [
+                "이 사람이 평소 자주 하던 말은 무엇인가요?",
+                "이 사람을 세 단어로 표현하면 무엇인가요?",
+                "이 사람이 힘든 상황에서 자주 해주던 말은 무엇인가요?",
+                "이 사람과 가장 기억에 남는 에피소드는 무엇인가요?",
+            ],
+            "PHOTO_MEMORY": [
+                "이 사진은 언제 찍은 사진인가요?",
+                "사진 속 사람들과는 어떤 관계였나요?",
+                "이날 가장 기억나는 감정은 무엇인가요?",
+            ],
+            "SELF_STORY": [
+                "오늘 가장 기억에 남는 일은 무엇인가요?",
+                "나중에 가족이나 친구에게 남기고 싶은 말이 있나요?",
+                "지금의 나를 만든 중요한 사건은 무엇인가요?",
+            ],
+        }
+        options = questions.get(session_type, questions["SELF_STORY"])
+        return options[(order_index - 1) % len(options)]
+
+    @staticmethod
     async def generate_follow_up_question(
         user_answer: str,
         context: dict | None = None,
