@@ -608,3 +608,121 @@ class TestPhotoMemory:
         assert session.status_code == 201
         assert session.json()["photo_memory_id"] == photo_memory_id
 
+
+class TestStoryBook:
+    """StoryBook and StoryChapter API tests."""
+
+    @pytest.fixture
+    def story_context(self, client):
+        user_data = {
+            "email": "storybook@example.com",
+            "nickname": "storybook",
+            "password": "securepassword123",
+        }
+        register = client.post("/api/v1/auth/register", json=user_data)
+        headers = {"Authorization": f"Bearer {register.json()['access_token']}"}
+
+        session = client.post(
+            "/api/v1/interviews",
+            json={"session_type": "SELF_STORY", "title": "Self story interview"},
+            headers=headers,
+        ).json()
+        question = client.post(
+            f"/api/v1/interviews/{session['id']}/questions",
+            json={"question_type": "memory"},
+            headers=headers,
+        ).json()
+        client.post(
+            f"/api/v1/interviews/{session['id']}/answers",
+            json={"question_id": question["id"], "answer_text": "A quiet morning changed how I saw my family."},
+            headers=headers,
+        )
+
+        photo = client.post(
+            "/api/v1/photo-memories",
+            data={"title": "Picnic", "description": "A sunny picnic near the river"},
+            files={"file": ("picnic.jpg", b"fake-image-data", "image/jpeg")},
+            headers=headers,
+        ).json()
+        return {"headers": headers, "session_id": session["id"], "photo_memory_id": photo["id"]}
+
+    def test_create_list_get_chapters_and_regenerate_from_interview(self, client, story_context):
+        headers = story_context["headers"]
+        create_response = client.post(
+            "/api/v1/storybooks",
+            json={
+                "title": "My Story",
+                "interview_session_id": story_context["session_id"],
+            },
+            headers=headers,
+        )
+        assert create_response.status_code == 201
+        storybook = create_response.json()
+        assert storybook["source_type"] == "SELF_STORY"
+        assert storybook["status"] == "GENERATED"
+        assert storybook["visibility"] == "PRIVATE"
+        assert len(storybook["chapters"]) == 1
+        assert "A quiet morning" in storybook["chapters"][0]["content"]
+
+        storybook_id = storybook["id"]
+        storybooks = client.get("/api/v1/storybooks", headers=headers)
+        assert storybooks.status_code == 200
+        assert len(storybooks.json()) == 1
+
+        detail = client.get(f"/api/v1/storybooks/{storybook_id}", headers=headers)
+        assert detail.status_code == 200
+        assert detail.json()["id"] == storybook_id
+
+        chapters = client.get(f"/api/v1/storybooks/{storybook_id}/chapters", headers=headers)
+        assert chapters.status_code == 200
+        assert [chapter["order_index"] for chapter in chapters.json()] == [1]
+
+        regenerated = client.post(f"/api/v1/storybooks/{storybook_id}/regenerate", headers=headers)
+        assert regenerated.status_code == 200
+        assert regenerated.json()["id"] == storybook_id
+        assert len(regenerated.json()["chapters"]) == 1
+
+    def test_create_storybook_from_photo_memory(self, client, story_context):
+        response = client.post(
+            "/api/v1/storybooks",
+            json={
+                "title": "Photo Story",
+                "photo_memory_id": story_context["photo_memory_id"],
+                "visibility": "LINK",
+            },
+            headers=story_context["headers"],
+        )
+        assert response.status_code == 201
+        payload = response.json()
+        assert payload["source_type"] == "PHOTO_MEMORY"
+        assert payload["visibility"] == "LINK"
+        assert "sunny picnic" in payload["chapters"][0]["content"]
+
+    def test_storybook_requires_source(self, client, story_context):
+        response = client.post(
+            "/api/v1/storybooks",
+            json={"title": "Missing source"},
+            headers=story_context["headers"],
+        )
+        assert response.status_code == 422
+
+    def test_other_user_cannot_access_storybook(self, client, story_context):
+        storybook = client.post(
+            "/api/v1/storybooks",
+            json={"title": "Private Story", "interview_session_id": story_context["session_id"]},
+            headers=story_context["headers"],
+        ).json()
+
+        other_user = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "otherstorybook@example.com",
+                "nickname": "otherstorybook",
+                "password": "securepassword123",
+            },
+        )
+        other_headers = {"Authorization": f"Bearer {other_user.json()['access_token']}"}
+
+        response = client.get(f"/api/v1/storybooks/{storybook['id']}", headers=other_headers)
+        assert response.status_code == 403
+

@@ -14,7 +14,14 @@ from app.models.interview import (
     InterviewType,
     PhotoMemory,
 )
-from app.models.storybook import StoryBook, StoryChapter, StoryVoiceNarration
+from app.models.storybook import (
+    StoryBook,
+    StoryBookSourceType,
+    StoryBookStatus,
+    StoryBookVisibility,
+    StoryChapter,
+    StoryVoiceNarration,
+)
 from app.models.sharing import MemoryGroup, GroupMember, ShareLink, GroupStoryBook, SharePermission
 from app.models.consent import ConsentLog, ConsentType
 from app.models.deletion import DeletionRequest, DeletionItemType, DeletionStatus
@@ -42,6 +49,9 @@ __all__ = [
     "InterviewType",
     "InterviewStatus",
     "StoryBook",
+    "StoryBookSourceType",
+    "StoryBookStatus",
+    "StoryBookVisibility",
     "StoryChapter",
     "StoryVoiceNarration",
     "MemoryGroup",

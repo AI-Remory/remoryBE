@@ -116,6 +116,50 @@ class AIService:
         }
 
     @staticmethod
+    async def generate_mock_storybook(
+        title: str,
+        source_type: str,
+        source_context: dict,
+        interview_items: list[dict] | None = None,
+    ) -> dict:
+        """Generate a deterministic storybook draft without calling an AI API."""
+        interview_items = interview_items or []
+        chapters = []
+
+        if interview_items:
+            for index, item in enumerate(interview_items, start=1):
+                question = item.get("question_text") or "Untitled question"
+                answers = item.get("answers") or []
+                answer_text = " ".join(answer for answer in answers if answer).strip()
+                if not answer_text:
+                    answer_text = "아직 답변이 기록되지 않았지만, 이 질문은 중요한 기억의 실마리로 남아 있습니다."
+                chapters.append(
+                    {
+                        "title": f"Chapter {index}: {question[:40]}",
+                        "content": f"{question}\n\n{answer_text}",
+                        "summary": answer_text[:120],
+                        "order_index": index,
+                    }
+                )
+        else:
+            photo_title = source_context.get("photo_title") or title
+            photo_description = source_context.get("photo_description") or "사진에 담긴 순간을 중심으로 이야기를 구성했습니다."
+            chapters.append(
+                {
+                    "title": f"Chapter 1: {photo_title}",
+                    "content": photo_description,
+                    "summary": photo_description[:120],
+                    "order_index": 1,
+                }
+            )
+
+        summary = f"{source_type} 자료를 바탕으로 생성한 '{title}' 스토리북입니다. 총 {len(chapters)}개의 챕터로 구성되었습니다."
+        return {
+            "summary": summary,
+            "chapters": chapters,
+        }
+
+    @staticmethod
     async def generate_persona_response(
         user_message: str,
         persona_profile: dict,
