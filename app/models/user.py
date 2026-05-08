@@ -20,6 +20,6 @@ class User(BaseModel):
     persona_chats = relationship("PersonaChat", back_populates="user", cascade="all, delete-orphan")
     interview_sessions = relationship("AIInterviewSession", back_populates="user", cascade="all, delete-orphan")
     storybooks = relationship("StoryBook", back_populates="user", cascade="all, delete-orphan")
-    memory_groups = relationship("MemoryGroup", back_populates="creator", cascade="all, delete-orphan")
+    memory_groups = relationship("MemoryGroup", back_populates="owner", cascade="all, delete-orphan")
     consent_logs = relationship("ConsentLog", back_populates="user", cascade="all, delete-orphan")
     deletion_requests = relationship("DeletionRequest", back_populates="user", cascade="all, delete-orphan")

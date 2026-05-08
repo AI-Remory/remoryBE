@@ -846,3 +846,191 @@ class TestShareLink:
         response = client.get(f"/api/v1/share/{share_link['token']}")
         assert response.status_code == 403
 
+
+class TestMemoryGroup:
+    """MemoryGroup, GroupMember, and GroupStoryBook API tests."""
+
+    @pytest.fixture
+    def group_context(self, client):
+        owner = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "groupowner@example.com",
+                "nickname": "groupowner",
+                "password": "securepassword123",
+            },
+        ).json()
+        member = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "groupmember@example.com",
+                "nickname": "groupmember",
+                "password": "securepassword123",
+            },
+        ).json()
+        outsider = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "groupoutsider@example.com",
+                "nickname": "groupoutsider",
+                "password": "securepassword123",
+            },
+        ).json()
+        owner_headers = {"Authorization": f"Bearer {owner['access_token']}"}
+        member_headers = {"Authorization": f"Bearer {member['access_token']}"}
+        outsider_headers = {"Authorization": f"Bearer {outsider['access_token']}"}
+
+        session = client.post(
+            "/api/v1/interviews",
+            json={"session_type": "SELF_STORY", "title": "Group interview"},
+            headers=owner_headers,
+        ).json()
+        question = client.post(
+            f"/api/v1/interviews/{session['id']}/questions",
+            json={},
+            headers=owner_headers,
+        ).json()
+        client.post(
+            f"/api/v1/interviews/{session['id']}/answers",
+            json={"question_id": question["id"], "answer_text": "A story for the group."},
+            headers=owner_headers,
+        )
+        storybook = client.post(
+            "/api/v1/storybooks",
+            json={"title": "Group Story", "interview_session_id": session["id"]},
+            headers=owner_headers,
+        ).json()
+
+        return {
+            "owner_headers": owner_headers,
+            "member_headers": member_headers,
+            "outsider_headers": outsider_headers,
+            "member_id": member["user"]["id"],
+            "storybook_id": storybook["id"],
+        }
+
+    def test_create_group_add_member_and_list_members(self, client, group_context):
+        create_response = client.post(
+            "/api/v1/groups",
+            json={"name": "Family", "description": "Family memories"},
+            headers=group_context["owner_headers"],
+        )
+        assert create_response.status_code == 201
+        group = create_response.json()
+        assert group["name"] == "Family"
+        assert group["deleted_at"] is None
+
+        owner_detail = client.get(f"/api/v1/groups/{group['id']}", headers=group_context["owner_headers"])
+        assert owner_detail.status_code == 200
+        assert owner_detail.json()["my_role"] == "OWNER"
+
+        add_member = client.post(
+            f"/api/v1/groups/{group['id']}/members",
+            json={"user_id": group_context["member_id"], "role": "MEMBER"},
+            headers=group_context["owner_headers"],
+        )
+        assert add_member.status_code == 201
+        assert add_member.json()["role"] == "MEMBER"
+
+        duplicate = client.post(
+            f"/api/v1/groups/{group['id']}/members",
+            json={"user_id": group_context["member_id"], "role": "VIEWER"},
+            headers=group_context["owner_headers"],
+        )
+        assert duplicate.status_code == 201
+        assert duplicate.json()["id"] == add_member.json()["id"]
+        assert duplicate.json()["role"] == "MEMBER"
+
+        member_detail = client.get(f"/api/v1/groups/{group['id']}", headers=group_context["member_headers"])
+        assert member_detail.status_code == 200
+        assert member_detail.json()["my_role"] == "MEMBER"
+
+        member_list = client.get(f"/api/v1/groups/{group['id']}/members", headers=group_context["member_headers"])
+        assert member_list.status_code == 200
+        assert [member["role"] for member in member_list.json()] == ["OWNER", "MEMBER"]
+
+        groups = client.get("/api/v1/groups", headers=group_context["member_headers"])
+        assert groups.status_code == 200
+        assert len(groups.json()) == 1
+
+    def test_only_owner_can_add_members_and_outsider_cannot_access(self, client, group_context):
+        group = client.post(
+            "/api/v1/groups",
+            json={"name": "Friends"},
+            headers=group_context["owner_headers"],
+        ).json()
+        client.post(
+            f"/api/v1/groups/{group['id']}/members",
+            json={"user_id": group_context["member_id"], "role": "MEMBER"},
+            headers=group_context["owner_headers"],
+        )
+
+        denied_add = client.post(
+            f"/api/v1/groups/{group['id']}/members",
+            json={"user_id": group_context["member_id"], "role": "VIEWER"},
+            headers=group_context["member_headers"],
+        )
+        assert denied_add.status_code == 403
+
+        denied_get = client.get(f"/api/v1/groups/{group['id']}", headers=group_context["outsider_headers"])
+        assert denied_get.status_code == 403
+
+    def test_share_storybook_to_group_and_list_safe_storybook_payload(self, client, group_context):
+        group = client.post(
+            "/api/v1/groups",
+            json={"name": "Book club"},
+            headers=group_context["owner_headers"],
+        ).json()
+        client.post(
+            f"/api/v1/groups/{group['id']}/members",
+            json={"user_id": group_context["member_id"], "role": "MEMBER"},
+            headers=group_context["owner_headers"],
+        )
+
+        share_response = client.post(
+            f"/api/v1/groups/{group['id']}/storybooks/{group_context['storybook_id']}",
+            headers=group_context["owner_headers"],
+        )
+        assert share_response.status_code == 201
+        assert share_response.json()["shared_by"]
+
+        duplicate = client.post(
+            f"/api/v1/groups/{group['id']}/storybooks/{group_context['storybook_id']}",
+            headers=group_context["owner_headers"],
+        )
+        assert duplicate.status_code == 201
+        assert duplicate.json()["id"] == share_response.json()["id"]
+
+        storybook_detail = client.get(
+            f"/api/v1/storybooks/{group_context['storybook_id']}",
+            headers=group_context["owner_headers"],
+        )
+        assert storybook_detail.status_code == 200
+        assert storybook_detail.json()["visibility"] == "GROUP"
+
+        storybooks = client.get(f"/api/v1/groups/{group['id']}/storybooks", headers=group_context["member_headers"])
+        assert storybooks.status_code == 200
+        payload = storybooks.json()[0]
+        assert payload["title"] == "Group Story"
+        assert payload["visibility"] == "GROUP"
+        assert "file_path" not in payload
+        assert "user_id" not in payload
+
+    def test_member_cannot_share_storybook_owned_by_another_user(self, client, group_context):
+        group = client.post(
+            "/api/v1/groups",
+            json={"name": "Restricted"},
+            headers=group_context["owner_headers"],
+        ).json()
+        client.post(
+            f"/api/v1/groups/{group['id']}/members",
+            json={"user_id": group_context["member_id"], "role": "MEMBER"},
+            headers=group_context["owner_headers"],
+        )
+
+        response = client.post(
+            f"/api/v1/groups/{group['id']}/storybooks/{group_context['storybook_id']}",
+            headers=group_context["member_headers"],
+        )
+        assert response.status_code == 403
+

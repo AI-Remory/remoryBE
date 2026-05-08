@@ -15,6 +15,14 @@ class SharePermission(str, enum.Enum):
     EDIT = "edit"
 
 
+class GroupMemberRole(str, enum.Enum):
+    """Role of a user inside a memory group."""
+
+    OWNER = "OWNER"
+    MEMBER = "MEMBER"
+    VIEWER = "VIEWER"
+
+
 class ShareLink(BaseModel):
     """Token-based personal share link for a storybook."""
 
@@ -37,16 +45,12 @@ class MemoryGroup(BaseModel):
     __tablename__ = "memory_groups"
 
     id = Column(Integer, primary_key=True, index=True)
-    creator_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-    group_code = Column(String(20), unique=True, nullable=False, index=True)
-    invite_link_token = Column(String(64), unique=True, nullable=True)
-    profile_image_path = Column(String(512), nullable=True)
+    deleted_at = Column(DateTime, nullable=True)
 
-    is_deleted = Column(Boolean, default=False, nullable=False)
-
-    creator = relationship("User", back_populates="memory_groups")
+    owner = relationship("User", back_populates="memory_groups")
     members = relationship("GroupMember", back_populates="group", cascade="all, delete-orphan")
     storybooks = relationship("GroupStoryBook", back_populates="group", cascade="all, delete-orphan")
 
@@ -59,8 +63,8 @@ class GroupMember(BaseModel):
     id = Column(Integer, primary_key=True, index=True)
     group_id = Column(Integer, ForeignKey("memory_groups.id"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    permission = Column(Enum(SharePermission), default=SharePermission.VIEW, nullable=False)
-    is_deleted = Column(Boolean, default=False, nullable=False)
+    role = Column(Enum(GroupMemberRole), default=GroupMemberRole.MEMBER, nullable=False)
+    deleted_at = Column(DateTime, nullable=True)
 
     group = relationship("MemoryGroup", back_populates="members")
 
@@ -73,9 +77,8 @@ class GroupStoryBook(BaseModel):
     id = Column(Integer, primary_key=True, index=True)
     group_id = Column(Integer, ForeignKey("memory_groups.id"), nullable=False, index=True)
     storybook_id = Column(Integer, ForeignKey("storybooks.id"), nullable=False, index=True)
-    shared_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-
-    is_deleted = Column(Boolean, default=False, nullable=False)
+    shared_by = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    deleted_at = Column(DateTime, nullable=True)
 
     group = relationship("MemoryGroup", back_populates="storybooks")
     storybook = relationship("StoryBook", back_populates="group_stories")

@@ -1,9 +1,9 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from app.models.sharing import SharePermission
+from app.models.sharing import GroupMemberRole, SharePermission
 from app.models.storybook import StoryBookVisibility
 from app.schemas.common import TimestampMixin
 
@@ -47,27 +47,61 @@ class PublicSharedStoryBookResponse(BaseModel):
 
 
 class MemoryGroupCreateRequest(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
 
 
 class MemoryGroupResponse(TimestampMixin):
     id: int
-    creator_id: int
+    owner_id: int
     name: str
     description: Optional[str]
-    group_code: str
-    profile_image_path: Optional[str]
+    deleted_at: Optional[datetime]
 
     class Config:
         from_attributes = True
+
+
+class MemoryGroupDetailResponse(MemoryGroupResponse):
+    my_role: GroupMemberRole
+
+    class Config:
+        from_attributes = True
+
+
+class GroupMemberCreateRequest(BaseModel):
+    user_id: int
+    role: GroupMemberRole = GroupMemberRole.MEMBER
 
 
 class GroupMemberResponse(TimestampMixin):
     id: int
     group_id: int
     user_id: int
-    permission: SharePermission
+    role: GroupMemberRole
+    deleted_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
+class GroupStoryBookResponse(BaseModel):
+    id: int
+    group_id: int
+    storybook_id: int
+    shared_by: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class GroupStoryBookListItemResponse(BaseModel):
+    id: int
+    title: str
+    summary: Optional[str]
+    visibility: StoryBookVisibility
+    created_at: datetime
 
     class Config:
         from_attributes = True

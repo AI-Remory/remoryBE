@@ -22,7 +22,7 @@ from app.models.storybook import (
     StoryChapter,
     StoryVoiceNarration,
 )
-from app.models.sharing import MemoryGroup, GroupMember, ShareLink, GroupStoryBook, SharePermission
+from app.models.sharing import GroupMember, GroupMemberRole, GroupStoryBook, MemoryGroup, ShareLink, SharePermission
 from app.models.consent import ConsentLog, ConsentType
 from app.models.deletion import DeletionRequest, DeletionItemType, DeletionStatus
 
@@ -56,6 +56,7 @@ __all__ = [
     "StoryVoiceNarration",
     "MemoryGroup",
     "GroupMember",
+    "GroupMemberRole",
     "ShareLink",
     "GroupStoryBook",
     "SharePermission",
