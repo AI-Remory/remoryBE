@@ -1,37 +1,57 @@
+from datetime import datetime
 from typing import Optional
+
 from pydantic import BaseModel
-from app.schemas.common import TimestampMixin
+
 from app.models.sharing import SharePermission
+from app.models.storybook import StoryBookVisibility
+from app.schemas.common import TimestampMixin
 
 
 class ShareLinkCreateRequest(BaseModel):
-    """공유 링크 생성 요청"""
-    storybook_id: int
-    permission: SharePermission = SharePermission.VIEW
-    description: Optional[str] = None
+    expires_at: Optional[datetime] = None
 
 
 class ShareLinkResponse(TimestampMixin):
-    """공유 링크 응답"""
     id: int
     storybook_id: int
-    share_token: str
-    permission: SharePermission
-    description: Optional[str]
-    is_expired: bool
+    owner_id: int
+    token: str
+    is_active: bool
+    expires_at: Optional[datetime]
+    disabled_at: Optional[datetime]
+    share_url: str
 
     class Config:
         from_attributes = True
 
 
+class ShareLinkDisableResponse(BaseModel):
+    id: int
+    is_active: bool
+    disabled_at: Optional[datetime]
+
+
+class PublicStoryChapterResponse(BaseModel):
+    title: str
+    content: str
+    summary: Optional[str]
+    order_index: int
+
+
+class PublicSharedStoryBookResponse(BaseModel):
+    title: str
+    summary: Optional[str]
+    visibility: StoryBookVisibility
+    chapters: list[PublicStoryChapterResponse]
+
+
 class MemoryGroupCreateRequest(BaseModel):
-    """MemoryGroup 생성 요청"""
     name: str
     description: Optional[str] = None
 
 
 class MemoryGroupResponse(TimestampMixin):
-    """MemoryGroup 응답"""
     id: int
     creator_id: int
     name: str
@@ -44,7 +64,6 @@ class MemoryGroupResponse(TimestampMixin):
 
 
 class GroupMemberResponse(TimestampMixin):
-    """GroupMember 응답"""
     id: int
     group_id: int
     user_id: int
@@ -52,4 +71,3 @@ class GroupMemberResponse(TimestampMixin):
 
     class Config:
         from_attributes = True
-

@@ -1,36 +1,39 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Enum, Boolean
-from sqlalchemy.orm import relationship
 import enum
 import secrets
+
+from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import relationship
+
 from app.models.base import BaseModel
 
 
 class SharePermission(str, enum.Enum):
-    """공유 권한"""
+    """Group sharing permission placeholder."""
+
     VIEW = "view"
     COMMENT = "comment"
     EDIT = "edit"
 
 
 class ShareLink(BaseModel):
-    """개인 전달 공유 링크"""
+    """Token-based personal share link for a storybook."""
+
     __tablename__ = "share_links"
 
     id = Column(Integer, primary_key=True, index=True)
     storybook_id = Column(Integer, ForeignKey("storybooks.id"), nullable=False, index=True)
-    share_token = Column(String(64), unique=True, nullable=False, index=True, default=lambda: secrets.token_urlsafe(48))
-    permission = Column(Enum(SharePermission), default=SharePermission.VIEW, nullable=False)
-    shared_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    description = Column(Text, nullable=True)
-    is_expired = Column(Boolean, default=False)
-    is_deleted = Column(Boolean, default=False, nullable=False)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token = Column(String(128), unique=True, nullable=False, index=True, default=lambda: secrets.token_urlsafe(48))
+    is_active = Column(Boolean, default=True, nullable=False)
+    expires_at = Column(DateTime, nullable=True)
+    disabled_at = Column(DateTime, nullable=True)
 
-    # 관계
     storybook = relationship("StoryBook", back_populates="share_links")
 
 
 class MemoryGroup(BaseModel):
-    """그룹 공유 공간"""
+    """Group sharing space."""
+
     __tablename__ = "memory_groups"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -43,14 +46,14 @@ class MemoryGroup(BaseModel):
 
     is_deleted = Column(Boolean, default=False, nullable=False)
 
-    # 관계
     creator = relationship("User", back_populates="memory_groups")
     members = relationship("GroupMember", back_populates="group", cascade="all, delete-orphan")
     storybooks = relationship("GroupStoryBook", back_populates="group", cascade="all, delete-orphan")
 
 
 class GroupMember(BaseModel):
-    """그룹 멤버"""
+    """Group member."""
+
     __tablename__ = "group_members"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -59,12 +62,12 @@ class GroupMember(BaseModel):
     permission = Column(Enum(SharePermission), default=SharePermission.VIEW, nullable=False)
     is_deleted = Column(Boolean, default=False, nullable=False)
 
-    # 관계
     group = relationship("MemoryGroup", back_populates="members")
 
 
 class GroupStoryBook(BaseModel):
-    """그룹과 스토리북의 관계"""
+    """Association between a group and a storybook."""
+
     __tablename__ = "group_storybooks"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -74,7 +77,5 @@ class GroupStoryBook(BaseModel):
 
     is_deleted = Column(Boolean, default=False, nullable=False)
 
-    # 관계
     group = relationship("MemoryGroup", back_populates="storybooks")
     storybook = relationship("StoryBook", back_populates="group_stories")
-

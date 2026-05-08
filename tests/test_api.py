@@ -1,4 +1,5 @@
 """API 테스트"""
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import pytest
 
@@ -724,5 +725,124 @@ class TestStoryBook:
         other_headers = {"Authorization": f"Bearer {other_user.json()['access_token']}"}
 
         response = client.get(f"/api/v1/storybooks/{storybook['id']}", headers=other_headers)
+        assert response.status_code == 403
+
+
+class TestShareLink:
+    """ShareLink API tests."""
+
+    @pytest.fixture
+    def share_context(self, client):
+        user_data = {
+            "email": "shareuser@example.com",
+            "nickname": "shareuser",
+            "password": "securepassword123",
+        }
+        register = client.post("/api/v1/auth/register", json=user_data)
+        headers = {"Authorization": f"Bearer {register.json()['access_token']}"}
+
+        session = client.post(
+            "/api/v1/interviews",
+            json={"session_type": "SELF_STORY", "title": "Share interview"},
+            headers=headers,
+        ).json()
+        question = client.post(
+            f"/api/v1/interviews/{session['id']}/questions",
+            json={},
+            headers=headers,
+        ).json()
+        client.post(
+            f"/api/v1/interviews/{session['id']}/answers",
+            json={"question_id": question["id"], "answer_text": "A memory worth sharing."},
+            headers=headers,
+        )
+        storybook = client.post(
+            "/api/v1/storybooks",
+            json={"title": "Shared Story", "interview_session_id": session["id"]},
+            headers=headers,
+        ).json()
+        return {"headers": headers, "storybook_id": storybook["id"]}
+
+    def test_create_list_public_read_and_disable_share_link(self, client, share_context):
+        headers = share_context["headers"]
+        storybook_id = share_context["storybook_id"]
+
+        create_response = client.post(
+            f"/api/v1/storybooks/{storybook_id}/share-links",
+            json={},
+            headers=headers,
+        )
+        assert create_response.status_code == 201
+        share_link = create_response.json()
+        assert share_link["storybook_id"] == storybook_id
+        assert share_link["is_active"] is True
+        assert share_link["share_url"] == f"/api/v1/share/{share_link['token']}"
+
+        storybook_detail = client.get(f"/api/v1/storybooks/{storybook_id}", headers=headers)
+        assert storybook_detail.status_code == 200
+        assert storybook_detail.json()["visibility"] == "LINK"
+
+        links = client.get(f"/api/v1/storybooks/{storybook_id}/share-links", headers=headers)
+        assert links.status_code == 200
+        assert len(links.json()) == 1
+
+        public_response = client.get(f"/api/v1/share/{share_link['token']}")
+        assert public_response.status_code == 200
+        public_payload = public_response.json()
+        assert public_payload["title"] == "Shared Story"
+        assert public_payload["visibility"] == "LINK"
+        assert "owner_id" not in public_payload
+        assert "file_path" not in public_payload
+        assert len(public_payload["chapters"]) == 1
+
+        disable_response = client.patch(
+            f"/api/v1/share-links/{share_link['id']}/disable",
+            headers=headers,
+        )
+        assert disable_response.status_code == 200
+        assert disable_response.json()["is_active"] is False
+
+        blocked_response = client.get(f"/api/v1/share/{share_link['token']}")
+        assert blocked_response.status_code == 403
+
+    def test_other_user_cannot_create_or_disable_share_link(self, client, share_context):
+        other_user = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "othershare@example.com",
+                "nickname": "othershare",
+                "password": "securepassword123",
+            },
+        )
+        other_headers = {"Authorization": f"Bearer {other_user.json()['access_token']}"}
+        storybook_id = share_context["storybook_id"]
+
+        denied_create = client.post(
+            f"/api/v1/storybooks/{storybook_id}/share-links",
+            json={},
+            headers=other_headers,
+        )
+        assert denied_create.status_code == 403
+
+        share_link = client.post(
+            f"/api/v1/storybooks/{storybook_id}/share-links",
+            json={},
+            headers=share_context["headers"],
+        ).json()
+        denied_disable = client.patch(
+            f"/api/v1/share-links/{share_link['id']}/disable",
+            headers=other_headers,
+        )
+        assert denied_disable.status_code == 403
+
+    def test_expired_share_link_is_blocked(self, client, share_context):
+        expires_at = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+        share_link = client.post(
+            f"/api/v1/storybooks/{share_context['storybook_id']}/share-links",
+            json={"expires_at": expires_at},
+            headers=share_context["headers"],
+        ).json()
+
+        response = client.get(f"/api/v1/share/{share_link['token']}")
         assert response.status_code == 403
 
