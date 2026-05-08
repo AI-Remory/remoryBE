@@ -234,3 +234,81 @@ class TestTargetMedia:
         )
         assert upload.status_code == 403
 
+
+class TestPersona:
+    """Persona API tests."""
+
+    @pytest.fixture
+    def user_and_target(self, client):
+        user_data = {
+            "email": "personauser@example.com",
+            "nickname": "personauser",
+            "password": "securepassword123",
+        }
+        register = client.post("/api/v1/auth/register", json=user_data)
+        token = register.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        target = client.post(
+            "/api/v1/targets",
+            json={"name": "Grandma", "description": "Loves family stories", "target_type": "grandparent"},
+            headers=headers,
+        )
+        target_id = target.json()["id"]
+
+        client.post(
+            f"/api/v1/targets/{target_id}/media",
+            data={"media_type": "image"},
+            files={"file": ("photo.jpg", b"fake-image-data", "image/jpeg")},
+            headers=headers,
+        )
+        client.post(
+            f"/api/v1/targets/{target_id}/media",
+            data={"media_type": "voice"},
+            files={"file": ("voice.wav", b"fake-audio-data", "audio/wav")},
+            headers=headers,
+        )
+        return {"headers": headers, "target_id": target_id}
+
+    def test_create_get_and_status_persona(self, client, user_and_target):
+        headers = user_and_target["headers"]
+        target_id = user_and_target["target_id"]
+
+        create_response = client.post(f"/api/v1/targets/{target_id}/persona", headers=headers)
+        assert create_response.status_code == 201
+        persona = create_response.json()
+        assert persona["target_id"] == target_id
+        assert persona["status"] == "READY"
+        assert persona["persona_name"] == "Grandma Persona"
+        assert "1 uploaded photo" in persona["memory_summary"]
+        assert persona["is_voice_profile_created"] is True
+        assert persona["voice_profile"]["metadata"]["voice_media_count"] == 1
+
+        persona_id = persona["id"]
+        detail_response = client.get(f"/api/v1/personas/{persona_id}", headers=headers)
+        assert detail_response.status_code == 200
+        assert detail_response.json()["id"] == persona_id
+
+        status_response = client.get(f"/api/v1/personas/{persona_id}/status", headers=headers)
+        assert status_response.status_code == 200
+        assert status_response.json() == {
+            "persona_id": persona_id,
+            "target_id": target_id,
+            "status": "READY",
+        }
+
+    def test_create_persona_denied_for_other_user_target(self, client, user_and_target):
+        target_id = user_and_target["target_id"]
+        other_user = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "otherpersona@example.com",
+                "nickname": "otherpersona",
+                "password": "securepassword123",
+            },
+        )
+        other_headers = {"Authorization": f"Bearer {other_user.json()['access_token']}"}
+
+        response = client.post(f"/api/v1/targets/{target_id}/persona", headers=other_headers)
+        assert response.status_code == 403
+
