@@ -16,6 +16,7 @@ class User(BaseModel):
     targets = relationship("Target", back_populates="user", cascade="all, delete-orphan")
     refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
     uploaded_media = relationship("TargetMedia", back_populates="uploader", cascade="all, delete-orphan")
+    photo_memories = relationship("PhotoMemory", back_populates="user", cascade="all, delete-orphan")
     persona_chats = relationship("PersonaChat", back_populates="user", cascade="all, delete-orphan")
     interview_sessions = relationship("AIInterviewSession", back_populates="user", cascade="all, delete-orphan")
     storybooks = relationship("StoryBook", back_populates="user", cascade="all, delete-orphan")

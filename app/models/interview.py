@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, JSON, String, Text, func
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base, BaseModel
@@ -23,18 +23,26 @@ class InterviewStatus(str, enum.Enum):
 
 
 class PhotoMemory(BaseModel):
-    """Photo memory placeholder for future photo storybook features."""
+    """User-uploaded personal photo memory for storybook creation."""
 
     __tablename__ = "photo_memories"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    photo_file_path = Column(String(512), nullable=False)
-    photo_mime_type = Column(String(100), nullable=False)
-    photo_original_filename = Column(String(512), nullable=False)
-    photo_description = Column(Text, nullable=True)
-    is_deleted = Column(Boolean, default=False, nullable=False)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    file_path = Column(String(512), nullable=False)
+    original_filename = Column(String(512), nullable=False)
+    stored_filename = Column(String(512), nullable=False)
+    mime_type = Column(String(100), nullable=False)
+    file_size = Column(Integer, nullable=False)
+    taken_at = Column(DateTime, nullable=True)
+    location = Column(String(255), nullable=True)
+    ai_caption = Column(Text, nullable=True)
+    emotion_keywords = Column(JSON, nullable=True)
+    deleted_at = Column(DateTime, nullable=True)
 
+    user = relationship("User", back_populates="photo_memories")
     interview_sessions = relationship(
         "AIInterviewSession",
         back_populates="photo_memory",

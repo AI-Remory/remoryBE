@@ -1,6 +1,6 @@
 """v1 API 라우터"""
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, chat, interview, media, persona, target
+from app.api.v1.endpoints import auth, chat, interview, media, persona, photo_memory, target
 
 api_v1_router = APIRouter(prefix="/v1")
 
@@ -11,6 +11,7 @@ api_v1_router.include_router(media.router)
 api_v1_router.include_router(persona.router)
 api_v1_router.include_router(chat.router)
 api_v1_router.include_router(interview.router)
+api_v1_router.include_router(photo_memory.router)
 
 # 다른 엔드포인트들은 나중에 추가할 것
 # api_v1_router.include_router(storybook.router)

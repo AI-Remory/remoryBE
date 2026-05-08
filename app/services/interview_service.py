@@ -42,7 +42,7 @@ class InterviewService:
         photo_memory = db.execute(
             select(PhotoMemory).where(
                 PhotoMemory.id == photo_memory_id,
-                PhotoMemory.is_deleted == False,
+                PhotoMemory.deleted_at.is_(None),
             )
         ).scalar_one_or_none()
         if not photo_memory:

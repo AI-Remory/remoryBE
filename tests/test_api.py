@@ -508,3 +508,103 @@ class TestAIInterview:
         response = client.get(f"/api/v1/interviews/{session_id}", headers=other_headers)
         assert response.status_code == 403
 
+
+class TestPhotoMemory:
+    """PhotoMemory API tests."""
+
+    @pytest.fixture
+    def auth_headers(self, client):
+        user_data = {
+            "email": "photomemory@example.com",
+            "nickname": "photomemory",
+            "password": "securepassword123",
+        }
+        register = client.post("/api/v1/auth/register", json=user_data)
+        return {"Authorization": f"Bearer {register.json()['access_token']}"}
+
+    def test_create_list_get_and_delete_photo_memory(self, client, auth_headers):
+        upload = client.post(
+            "/api/v1/photo-memories",
+            data={
+                "title": "Birthday",
+                "description": "Family birthday photo",
+                "location": "Seoul",
+            },
+            files={"file": ("birthday.jpg", b"fake-image-data", "image/jpeg")},
+            headers=auth_headers,
+        )
+        assert upload.status_code == 201
+        payload = upload.json()
+        photo_memory_id = payload["id"]
+        rel_path = payload["file_path"]
+        assert payload["title"] == "Birthday"
+        assert payload["original_filename"] == "birthday.jpg"
+        assert payload["stored_filename"] != "birthday.jpg"
+
+        backend_root = Path(__file__).resolve().parents[1]
+        assert (backend_root / rel_path).exists()
+
+        photo_list = client.get("/api/v1/photo-memories", headers=auth_headers)
+        assert photo_list.status_code == 200
+        assert len(photo_list.json()) == 1
+
+        detail = client.get(f"/api/v1/photo-memories/{photo_memory_id}", headers=auth_headers)
+        assert detail.status_code == 200
+        assert detail.json()["id"] == photo_memory_id
+
+        delete_response = client.delete(f"/api/v1/photo-memories/{photo_memory_id}", headers=auth_headers)
+        assert delete_response.status_code == 200
+        assert not (backend_root / rel_path).exists()
+
+        after_delete = client.get("/api/v1/photo-memories", headers=auth_headers)
+        assert after_delete.status_code == 200
+        assert after_delete.json() == []
+
+    def test_reject_non_image_photo_memory_upload(self, client, auth_headers):
+        response = client.post(
+            "/api/v1/photo-memories",
+            data={"title": "Not image"},
+            files={"file": ("note.txt", b"text", "text/plain")},
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+
+    def test_other_user_cannot_access_photo_memory(self, client, auth_headers):
+        upload = client.post(
+            "/api/v1/photo-memories",
+            data={"title": "Private"},
+            files={"file": ("private.jpg", b"fake-image-data", "image/jpeg")},
+            headers=auth_headers,
+        )
+        photo_memory_id = upload.json()["id"]
+
+        other_user = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "otherphoto@example.com",
+                "nickname": "otherphoto",
+                "password": "securepassword123",
+            },
+        )
+        other_headers = {"Authorization": f"Bearer {other_user.json()['access_token']}"}
+
+        response = client.get(f"/api/v1/photo-memories/{photo_memory_id}", headers=other_headers)
+        assert response.status_code == 403
+
+    def test_photo_memory_can_be_linked_to_photo_interview(self, client, auth_headers):
+        upload = client.post(
+            "/api/v1/photo-memories",
+            data={"title": "Trip"},
+            files={"file": ("trip.jpg", b"fake-image-data", "image/jpeg")},
+            headers=auth_headers,
+        )
+        photo_memory_id = upload.json()["id"]
+
+        session = client.post(
+            "/api/v1/interviews",
+            json={"session_type": "PHOTO_MEMORY", "photo_memory_id": photo_memory_id},
+            headers=auth_headers,
+        )
+        assert session.status_code == 201
+        assert session.json()["photo_memory_id"] == photo_memory_id
+
