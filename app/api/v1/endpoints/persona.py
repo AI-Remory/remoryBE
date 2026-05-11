@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
-from app.schemas.persona import PersonaDetailResponse, PersonaStatusResponse
+from app.schemas.persona import PersonaDetailResponse, PersonaStatusResponse, PersonaVoiceProfileResponse
 from app.services.persona_service import persona_service
 from app.utils.exceptions import RemoryException, to_http_exception
 
@@ -57,5 +57,38 @@ async def get_persona_status(
             target_id=persona.target_id,
             status=persona.status,
         )
+    except RemoryException as e:
+        raise to_http_exception(e)
+
+
+@router.post(
+    "/personas/{persona_id}/voice-profile",
+    response_model=PersonaVoiceProfileResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_persona_voice_profile(
+    persona_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create or refresh a voice cloning profile for a persona."""
+    try:
+        return await persona_service.create_voice_profile(db, persona_id, current_user.id)
+    except RemoryException as e:
+        raise to_http_exception(e)
+
+
+@router.get(
+    "/personas/{persona_id}/voice-profile",
+    response_model=PersonaVoiceProfileResponse,
+)
+async def get_persona_voice_profile(
+    persona_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get a persona voice profile owned by the current user."""
+    try:
+        return persona_service.get_voice_profile(db, persona_id, current_user.id)
     except RemoryException as e:
         raise to_http_exception(e)

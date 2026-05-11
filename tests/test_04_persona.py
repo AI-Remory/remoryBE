@@ -12,6 +12,27 @@ def test_persona_status(client, auth_headers, created_persona):
     assert response.json()["status"] == "READY"
 
 
+def test_create_and_get_persona_voice_profile(client, auth_headers, created_persona):
+    create_response = client.post(
+        f"/api/v1/personas/{created_persona['id']}/voice-profile",
+        headers=auth_headers,
+    )
+    assert create_response.status_code == 201
+    payload = create_response.json()
+    assert payload["persona_id"] == created_persona["id"]
+    assert payload["target_id"] == created_persona["target_id"]
+    assert payload["provider"] == "mock"
+    assert payload["status"] == "READY"
+    assert payload["reference_audio_count"] >= 1
+
+    get_response = client.get(
+        f"/api/v1/personas/{created_persona['id']}/voice-profile",
+        headers=auth_headers,
+    )
+    assert get_response.status_code == 200
+    assert get_response.json()["id"] == payload["id"]
+
+
 def test_create_persona_requires_verification(client, auth_headers, created_target, uploaded_media, target_persona_consent):
     """Test that persona creation fails without target verification."""
     target_id = created_target["id"]
@@ -34,8 +55,26 @@ def test_create_persona_requires_consent(client, auth_headers, uploaded_media, t
     assert response.status_code == 403
 
 
+def test_create_voice_profile_requires_reference_audio(client, auth_headers, created_target, target_persona_consent, target_verification):
+    persona_response = client.post(f"/api/v1/targets/{created_target['id']}/persona", headers=auth_headers)
+    assert persona_response.status_code == 201
+
+    response = client.post(
+        f"/api/v1/personas/{persona_response.json()['id']}/voice-profile",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 400
+
+
 def test_other_user_cannot_access_persona(client, created_persona, second_user_headers):
     response = client.get(f"/api/v1/personas/{created_persona['id']}", headers=second_user_headers)
     assert response.status_code in (403, 404)
 
 
+def test_other_user_cannot_access_voice_profile(client, created_persona, second_user_headers):
+    response = client.post(
+        f"/api/v1/personas/{created_persona['id']}/voice-profile",
+        headers=second_user_headers,
+    )
+    assert response.status_code in (403, 404)

@@ -8,9 +8,10 @@ from app.models.persona import Persona, PersonaStatus, PersonaVoiceProfile, Voic
 from app.models.target import Target
 from app.services.ai_service import ai_service
 from app.services.consent_service import consent_service
+from app.services.speech import get_voice_clone_service
 from app.services.verification_service import verification_service
 from app.models.consent import ConsentType
-from app.utils.exceptions import ForbiddenException, NotFoundException
+from app.utils.exceptions import ForbiddenException, NotFoundException, RemoryException
 
 
 class PersonaService:
@@ -71,6 +72,26 @@ class PersonaService:
             )
             .order_by(TargetMedia.created_at.asc(), TargetMedia.id.asc())
         ).scalars().first()
+
+    @staticmethod
+    def _get_voice_media(db: Session, target_id: int) -> list[TargetMedia]:
+        return db.execute(
+            select(TargetMedia)
+            .where(
+                TargetMedia.target_id == target_id,
+                TargetMedia.media_type == MediaType.VOICE,
+                TargetMedia.is_deleted == False,
+            )
+            .order_by(TargetMedia.created_at.asc(), TargetMedia.id.asc())
+        ).scalars().all()
+
+    @staticmethod
+    def _ensure_voice_profile_creation_allowed(db: Session, user_id: int, target_id: int) -> None:
+        # TODO: Enforce once policy work lands:
+        # - TargetVerificationRequest status must be APPROVED for this target.
+        # - ConsentLog must include explicit VOICE_CLONING consent.
+        # Current MVP keeps the checkpoint here without blocking existing flows.
+        return None
 
     @staticmethod
     async def create_persona(db: Session, target_id: int, user_id: int) -> Persona:
@@ -150,6 +171,59 @@ class PersonaService:
     @staticmethod
     def get_persona_status(db: Session, persona_id: int, user_id: int) -> Persona:
         return PersonaService._get_owned_persona(db, persona_id, user_id)
+
+    @staticmethod
+    async def create_voice_profile(db: Session, persona_id: int, user_id: int) -> PersonaVoiceProfile:
+        persona = PersonaService._get_owned_persona(db, persona_id, user_id)
+        PersonaService._ensure_voice_profile_creation_allowed(db, user_id, persona.target_id)
+
+        voice_media = PersonaService._get_voice_media(db, persona.target_id)
+        if not voice_media:
+            raise RemoryException("Reference voice audio is required", "REFERENCE_AUDIO_REQUIRED")
+
+        reference_audio_paths = [media.file_path for media in voice_media]
+        generated = await get_voice_clone_service().create_voice_profile(
+            persona_id=persona.id,
+            reference_audio_paths=reference_audio_paths,
+        )
+
+        if persona.voice_profile is None:
+            persona.voice_profile = PersonaVoiceProfile(persona_id=persona.id)
+
+        profile = persona.voice_profile
+        profile.target_id = persona.target_id
+        profile.provider = generated.get("provider") or "mock"
+        profile.model_name = generated.get("model_name")
+        status_value = generated.get("status") or VoiceProfileStatus.PENDING.value
+        profile.status = VoiceProfileStatus(status_value)
+        profile.reference_audio_count = generated.get("reference_audio_count") or len(reference_audio_paths)
+        profile.reference_audio_total_seconds = generated.get("reference_audio_total_seconds")
+        profile.voice_profile_path = generated.get("voice_profile_path")
+        profile.sample_audio_path = generated.get("sample_audio_path")
+        profile.error_message = generated.get("error_message")
+
+        representative_voice = voice_media[0]
+        profile.reference_voice_file_path = representative_voice.file_path
+        profile.reference_voice_mime_type = representative_voice.mime_type
+        profile.reference_voice_duration = representative_voice.duration_seconds
+        profile.voice_provider = profile.provider
+        profile.profile_metadata = {
+            "reference_audio_paths": reference_audio_paths,
+            "voice_media_count": len(voice_media),
+        }
+        profile.is_deleted = False
+        persona.is_voice_profile_created = profile.status == VoiceProfileStatus.READY
+
+        db.commit()
+        db.refresh(profile)
+        return profile
+
+    @staticmethod
+    def get_voice_profile(db: Session, persona_id: int, user_id: int) -> PersonaVoiceProfile:
+        persona = PersonaService._get_owned_persona(db, persona_id, user_id)
+        if persona.voice_profile is None or persona.voice_profile.is_deleted:
+            raise NotFoundException("PersonaVoiceProfile", persona_id)
+        return persona.voice_profile
 
 
 persona_service = PersonaService()
