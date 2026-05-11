@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.deps import get_admin_user
 from app.models.user import User
 from app.schemas.common import PaginatedResponse
+from app.schemas.deletion import DeletionRequestResponse
 from app.schemas.target_verification import (
     VerificationRequestAdminResponse,
     VerificationRequestApproveRequest,
@@ -15,6 +16,7 @@ from app.schemas.target_verification import (
     VerificationRequestRejectRequest,
     VerificationRequestRevokeRequest,
 )
+from app.services.deletion_service import deletion_service
 from app.services.verification_service import verification_service
 from app.utils.exceptions import RemoryException, to_http_exception
 
@@ -173,3 +175,90 @@ async def revoke_verification_request(
         )
     except RemoryException as e:
         raise to_http_exception(e)
+
+
+@router.get(
+    "/deletion-requests",
+    response_model=list[DeletionRequestResponse],
+)
+async def list_deletion_requests(
+    status: str | None = Query(default=None),
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """List all deletion requests (admin only)."""
+    try:
+        status_filter = None
+        if status is not None:
+            try:
+                from app.models.deletion import DeletionStatus
+                status_filter = DeletionStatus(status)
+            except (KeyError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Invalid status value",
+                ) from exc
+        return deletion_service.list_deletion_requests_admin(db, status_filter)
+    except RemoryException as e:
+        raise to_http_exception(e)
+
+
+@router.get(
+    "/deletion-requests/{request_id}",
+    response_model=DeletionRequestResponse,
+)
+async def get_deletion_request(
+    request_id: int,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Get a deletion request detail (admin only)."""
+    try:
+        return deletion_service.get_deletion_request_admin(db, request_id)
+    except RemoryException as e:
+        raise to_http_exception(e)
+
+
+@router.patch(
+    "/deletion-requests/{request_id}/approve-and-process",
+    response_model=DeletionRequestResponse,
+)
+async def approve_and_process_deletion_request(
+    request_id: int,
+    admin_note: str | None = Query(default=None),
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin approves and immediately processes a deletion request."""
+    try:
+        return deletion_service.process_deletion_request(
+            db,
+            admin_user.id,
+            request_id,
+            admin_note=admin_note,
+        )
+    except RemoryException as e:
+        raise to_http_exception(e)
+
+
+@router.patch(
+    "/deletion-requests/{request_id}/reject",
+    response_model=DeletionRequestResponse,
+)
+async def reject_deletion_request(
+    request_id: int,
+    admin_note: str | None = Query(default=None),
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin rejects a deletion request."""
+    try:
+        return deletion_service.reject_deletion_request(
+            db,
+            admin_user.id,
+            request_id,
+            admin_note=admin_note,
+        )
+    except RemoryException as e:
+        raise to_http_exception(e)
+

@@ -49,3 +49,17 @@ async def get_deletion_request(
         return deletion_service.get_deletion_request(db, current_user.id, request_id)
     except RemoryException as e:
         raise to_http_exception(e)
+
+
+@router.patch("/{request_id}/cancel", response_model=DeletionRequestResponse)
+async def cancel_deletion_request(
+    request_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Cancel a pending deletion request."""
+    try:
+        return deletion_service.cancel_deletion_request(db, current_user.id, request_id)
+    except RemoryException as e:
+        raise to_http_exception(e)
+

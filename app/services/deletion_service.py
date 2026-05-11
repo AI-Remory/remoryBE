@@ -57,7 +57,8 @@ class DeletionService:
             target_type=request_data.target_type,
             target_id=request_data.target_id,
             reason=request_data.reason,
-            status=DeletionStatus.REQUESTED,
+            status=DeletionStatus.PENDING,
+            requested_at=DeletionService._now(),
         )
         db.add(deletion_request)
         db.commit()
@@ -200,8 +201,11 @@ class DeletionService:
             item.is_deleted = True
 
         elif target_type == DeletionTargetType.VERIFICATION_REQUEST:
+            # Delete actual file and clear internal references
             DeletionService._delete_file_if_exists(item.submitted_file_path)
             item.submitted_file_path = ""
+            # Clear original filename to avoid retaining sensitive data
+            item.original_filename = ""
             item.deleted_at = now
 
         elif target_type == DeletionTargetType.PERSONA:
