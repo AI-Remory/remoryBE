@@ -1,46 +1,46 @@
+from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel
-from app.schemas.common import TimestampMixin
+
+from pydantic import BaseModel, ConfigDict, Field
+
 from app.models.chat import MessageType, SenderType
+from app.schemas.common import TimestampMixin
 
 
 class PersonaChatCreateRequest(BaseModel):
-    """PersonaChat 생성 요청"""
-    persona_id: int
-    title: Optional[str] = None
-    description: Optional[str] = None
+    title: Optional[str] = Field(default=None, max_length=255)
 
 
 class PersonaChatResponse(TimestampMixin):
-    """PersonaChat 응답"""
     id: int
     user_id: int
     persona_id: int
     title: Optional[str]
-    description: Optional[str]
-    is_deleted: bool
+    deleted_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
-class PersonaMessageRequest(BaseModel):
-    """메시지 전송 요청"""
-    chat_id: int
+class PersonaMessageCreateRequest(BaseModel):
     message_type: MessageType = MessageType.TEXT
-    content: Optional[str] = None  # 텍스트 메시지
+    content: Optional[str] = None
+    audio_file_path: Optional[str] = None
 
 
-class PersonaMessageResponse(TimestampMixin):
-    """메시지 응답"""
+class PersonaMessageResponse(BaseModel):
     id: int
     chat_id: int
     sender_type: SenderType
     message_type: MessageType
     content: Optional[str]
     audio_file_path: Optional[str]
-    is_deleted: bool
+    is_ai_generated: bool
+    created_at: datetime
+    deleted_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
+
+class PersonaMessagePairResponse(BaseModel):
+    user_message: PersonaMessageResponse
+    persona_message: PersonaMessageResponse

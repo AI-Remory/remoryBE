@@ -1,19 +1,19 @@
 from typing import Optional
-from pydantic import BaseModel
-from app.schemas.common import TimestampMixin
+
+from pydantic import BaseModel, ConfigDict
+
 from app.models.consent import ConsentType
+from app.schemas.common import TimestampMixin
 
 
 class ConsentLogCreateRequest(BaseModel):
-    """ConsentLog 생성 요청"""
-    target_id: int
+    target_id: Optional[int] = None
     consent_type: ConsentType
     is_consented: bool
     details: Optional[str] = None
 
 
 class ConsentLogResponse(TimestampMixin):
-    """ConsentLog 응답"""
     id: int
     user_id: int
     target_id: Optional[int]
@@ -21,6 +21,4 @@ class ConsentLogResponse(TimestampMixin):
     is_consented: bool
     details: Optional[str]
 
-    class Config:
-        from_attributes = True
-
+    model_config = ConfigDict(from_attributes=True)

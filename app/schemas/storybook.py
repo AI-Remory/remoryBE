@@ -1,58 +1,45 @@
-from typing import Optional, List
-from pydantic import BaseModel
+from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.models.storybook import StoryBookSourceType, StoryBookStatus, StoryBookVisibility
 from app.schemas.common import TimestampMixin
 
 
+class StoryBookCreateRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    interview_session_id: Optional[int] = None
+    photo_memory_id: Optional[int] = None
+    visibility: StoryBookVisibility = StoryBookVisibility.PRIVATE
+
+
 class StoryChapterResponse(TimestampMixin):
-    """StoryChapter 응답"""
     id: int
     storybook_id: int
-    chapter_order: int
     title: str
     content: str
     summary: Optional[str]
+    order_index: int
+    deleted_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
-
-
-class StoryVoiceNarrationResponse(TimestampMixin):
-    """StoryVoiceNarration 응답"""
-    id: int
-    storybook_id: int
-    chapter_id: Optional[int]
-    narration_file_path: str
-    narration_mime_type: str
-    narration_duration_seconds: Optional[int]
-    narration_type: str
-
-    class Config:
-        from_attributes = True
-
-
-class StoryBookCreateRequest(BaseModel):
-    """StoryBook 생성 요청"""
-    target_id: Optional[int] = None
-    title: str
-    description: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
 
 
 class StoryBookResponse(TimestampMixin):
-    """StoryBook 응답"""
     id: int
     user_id: int
-    target_id: Optional[int]
+    photo_memory_id: Optional[int]
+    interview_session_id: Optional[int]
     title: str
-    description: Optional[str]
-    cover_image_path: Optional[str]
-    is_published: bool
+    summary: Optional[str]
+    source_type: StoryBookSourceType
+    status: StoryBookStatus
+    visibility: StoryBookVisibility
+    deleted_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class StoryBookDetailResponse(StoryBookResponse):
-    """StoryBook 상세 응답"""
-    chapters: List[StoryChapterResponse]
-    voice_narrations: List[StoryVoiceNarrationResponse]
-
+    chapters: list[StoryChapterResponse] = Field(default_factory=list)

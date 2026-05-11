@@ -1,64 +1,162 @@
-"""AI Mock 서비스 (프로덕션에서는 실제 API 호출로 교체)"""
+"""AI mock service.
+
+Production integrations can replace these methods with real model/API calls.
+"""
+
+from app.models.target import TargetType
 
 
 class AIService:
-    """AI 기능을 담당하는 서비스"""
+    """Service boundary for AI-backed features."""
 
     @staticmethod
     async def generate_persona_profile(
         target_name: str,
-        description: str,
-        media_count: int = 0,
-    ) -> dict:
-        """페르소나 프로필 생성 (Mock)"""
-        # 실제로는 OpenAI API를 호출하여 요약 정보를 생성
+        relationship: TargetType | str,
+        description: str | None,
+        image_count: int = 0,
+        voice_count: int = 0,
+    ) -> dict[str, str]:
+        """Generate a deterministic persona profile without calling an AI API."""
+        relationship_value = relationship.value if isinstance(relationship, TargetType) else str(relationship)
+        clean_description = description or "No description was provided."
+
+        persona_name = f"{target_name} Persona"
+        speaking_style = (
+            f"Speaks warmly and naturally as a {relationship_value}, "
+            f"with a tone grounded in the provided memories."
+        )
+        personality_summary = (
+            f"{target_name} is represented as a thoughtful {relationship_value}. "
+            f"Profile hints: {clean_description}"
+        )
+        memory_summary = (
+            f"Built from {image_count} uploaded photo(s), {voice_count} uploaded voice sample(s), "
+            f"and the target description."
+        )
+        system_prompt = (
+            f"You are {persona_name}. Respond as {target_name}, the user's {relationship_value}. "
+            f"Use the following profile: {clean_description}. "
+            f"Reference available context from {image_count} photo(s) and {voice_count} voice sample(s)."
+        )
+
         return {
-            "personality_summary": f"{target_name}은 따뜻한 마음씨를 가진 사람입니다.",
-            "speaking_style": "친근하고 정중한 말씨",
-            "values_beliefs": "가족을 소중히 여기고 항상 긍정적인 자세를 유지합니다.",
-            "memorable_episodes": "평생 많은 추억들을 만들어온 사람입니다.",
+            "persona_name": persona_name,
+            "speaking_style": speaking_style,
+            "personality_summary": personality_summary,
+            "memory_summary": memory_summary,
+            "system_prompt": system_prompt,
         }
 
     @staticmethod
     async def generate_interview_question(
         interview_type: str,
-        context: dict = None,
+        context: dict | None = None,
     ) -> str:
-        """인터뷰 질문 생성 (Mock)"""
-        # 실제로는 OpenAI API를 호출하여 질문 생성
+        """Generate an interview question (mock)."""
         questions = {
-            "target_profile": "이 사람과 함께 있을 때 가장 기억에 남는 순간은 언제인가요?",
-            "photo_memory": "이 사진에 담긴 이야기를 들려주시겠어요?",
-            "persona_creation": "이 사람의 가장 큰 장점은 무엇이라고 생각하세요?",
+            "target_profile": "What memory best captures this person's character?",
+            "photo_memory": "What story should this photo preserve?",
+            "persona_creation": "What traits should this persona always remember?",
         }
-        return questions.get(interview_type, "질문을 생성해주세요.")
+        return questions.get(interview_type, "What memory would you like to preserve?")
+
+    @staticmethod
+    async def generate_mock_interview_question(
+        session_type: str,
+        order_index: int = 1,
+        context: dict | None = None,
+    ) -> str:
+        """Generate a deterministic interview question without calling an AI API."""
+        questions = {
+            "TARGET_PROFILE": [
+                "이 사람이 평소 자주 하던 말은 무엇인가요?",
+                "이 사람을 세 단어로 표현하면 무엇인가요?",
+                "이 사람이 힘든 상황에서 자주 해주던 말은 무엇인가요?",
+                "이 사람과 가장 기억에 남는 에피소드는 무엇인가요?",
+            ],
+            "PHOTO_MEMORY": [
+                "이 사진은 언제 찍은 사진인가요?",
+                "사진 속 사람들과는 어떤 관계였나요?",
+                "이날 가장 기억나는 감정은 무엇인가요?",
+            ],
+            "SELF_STORY": [
+                "오늘 가장 기억에 남는 일은 무엇인가요?",
+                "나중에 가족이나 친구에게 남기고 싶은 말이 있나요?",
+                "지금의 나를 만든 중요한 사건은 무엇인가요?",
+            ],
+        }
+        options = questions.get(session_type, questions["SELF_STORY"])
+        return options[(order_index - 1) % len(options)]
 
     @staticmethod
     async def generate_follow_up_question(
         user_answer: str,
-        context: dict = None,
+        context: dict | None = None,
     ) -> str:
-        """꼬리 질문 생성 (Mock)"""
-        # 실제로는 OpenAI API를 호출하여 꼬리 질문 생성
-        return f"그렇군요! {user_answer[:20]}... 에 대해 조금 더 자세히 말씀해 주실 수 있을까요?"
+        """Generate a follow-up interview question (mock)."""
+        return f"Can you share a little more about this memory: {user_answer[:40]}?"
 
     @staticmethod
     async def generate_storybook(
         target_name: str,
         chapters_data: list,
     ) -> dict:
-        """스토리북 생성 (Mock)"""
-        # 실제로는 OpenAI API를 호출하여 스토리북 혹은 챕터 생성
+        """Generate a storybook draft (mock)."""
         return {
             "chapters": [
                 {
                     "order": 1,
-                    "title": "만남",
-                    "content": f"{target_name}과의 첫 만남은 정말 특별했습니다...",
-                    "summary": "첫 만남 이야기",
+                    "title": "Beginning",
+                    "content": f"This chapter preserves an important memory of {target_name}.",
+                    "summary": f"A short memory about {target_name}.",
                 }
             ],
-            "cover_suggestion": f"{target_name}의 이야기",
+            "cover_suggestion": f"A warm portrait-style cover for {target_name}.",
+        }
+
+    @staticmethod
+    async def generate_mock_storybook(
+        title: str,
+        source_type: str,
+        source_context: dict,
+        interview_items: list[dict] | None = None,
+    ) -> dict:
+        """Generate a deterministic storybook draft without calling an AI API."""
+        interview_items = interview_items or []
+        chapters = []
+
+        if interview_items:
+            for index, item in enumerate(interview_items, start=1):
+                question = item.get("question_text") or "Untitled question"
+                answers = item.get("answers") or []
+                answer_text = " ".join(answer for answer in answers if answer).strip()
+                if not answer_text:
+                    answer_text = "아직 답변이 기록되지 않았지만, 이 질문은 중요한 기억의 실마리로 남아 있습니다."
+                chapters.append(
+                    {
+                        "title": f"Chapter {index}: {question[:40]}",
+                        "content": f"{question}\n\n{answer_text}",
+                        "summary": answer_text[:120],
+                        "order_index": index,
+                    }
+                )
+        else:
+            photo_title = source_context.get("photo_title") or title
+            photo_description = source_context.get("photo_description") or "사진에 담긴 순간을 중심으로 이야기를 구성했습니다."
+            chapters.append(
+                {
+                    "title": f"Chapter 1: {photo_title}",
+                    "content": photo_description,
+                    "summary": photo_description[:120],
+                    "order_index": 1,
+                }
+            )
+
+        summary = f"{source_type} 자료를 바탕으로 생성한 '{title}' 스토리북입니다. 총 {len(chapters)}개의 챕터로 구성되었습니다."
+        return {
+            "summary": summary,
+            "chapters": chapters,
         }
 
     @staticmethod
@@ -66,10 +164,23 @@ class AIService:
         user_message: str,
         persona_profile: dict,
     ) -> str:
-        """페르소나 응답 생성 (Mock)"""
-        # 실제로는 OpenAI API를 호출하여 페르소나 응답 생성
-        return f"네, 맞습니다. {user_message[:10]}... 에 대해 이야기해볼까요?"
+        """Generate a persona chat response (mock)."""
+        persona_name = persona_profile.get("persona_name", "Persona")
+        return f"{persona_name}: I hear you. Tell me more about {user_message[:40]}."
+
+    @staticmethod
+    async def generate_mock_persona_reply(
+        user_message: str,
+        persona_profile: dict,
+    ) -> str:
+        """Generate a deterministic persona reply without calling an AI API."""
+        persona_name = persona_profile.get("persona_name") or "Persona"
+        speaking_style = persona_profile.get("speaking_style") or "warm and concise"
+        memory_summary = persona_profile.get("memory_summary") or "available memories"
+        return (
+            f"{persona_name}: I remember this through {memory_summary}. "
+            f"Speaking in a {speaking_style} style, I would say: {user_message[:80]}"
+        )
 
 
 ai_service = AIService()
-

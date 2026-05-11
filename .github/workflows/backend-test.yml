@@ -1,0 +1,67 @@
+name: Backend Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  backend-test:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: remory_test_db
+          MYSQL_USER: remory
+          MYSQL_PASSWORD: password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create environment file
+        run: |
+          echo "APP_NAME=Remory API" >> .env
+          echo "DEBUG=True" >> .env
+          echo "ENVIRONMENT=test" >> .env
+
+          echo "MYSQL_USER=remory" >> .env
+          echo "MYSQL_PASSWORD=password" >> .env
+          echo "MYSQL_HOST=127.0.0.1" >> .env
+          echo "MYSQL_PORT=3306" >> .env
+          echo "MYSQL_DB=remory_test_db" >> .env
+
+          echo "SECRET_KEY=test-secret-key-for-github-actions" >> .env
+          echo "ALGORITHM=HS256" >> .env
+          echo "ACCESS_TOKEN_EXPIRE_MINUTES=30" >> .env
+          echo "REFRESH_TOKEN_EXPIRE_DAYS=14" >> .env
+
+          echo "UPLOAD_DIR=./uploads" >> .env
+          echo "MAX_UPLOAD_SIZE=52428800" >> .env
+
+      - name: Run database migrations
+        run: alembic upgrade head
+
+      - name: Run tests
+        run: pytest -v
