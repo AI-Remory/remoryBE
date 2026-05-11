@@ -1,3 +1,3 @@
-from app.services.ai.llm_service import LLMService, MockLLMService, get_llm_service
+from app.services.ai.llm_service import GeminiLLMService, LLMService, MockLLMService, get_llm_service
 
-__all__ = ["LLMService", "MockLLMService", "get_llm_service"]
+__all__ = ["GeminiLLMService", "LLMService", "MockLLMService", "get_llm_service"]

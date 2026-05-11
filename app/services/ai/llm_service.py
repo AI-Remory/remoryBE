@@ -1,6 +1,13 @@
-"""LLM service interface and mock implementation."""
+"""LLM service interface, Gemini implementation, and mock fallback."""
 
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import re
 from abc import ABC, abstractmethod
+from typing import Any
 
 from app.core.settings import settings
 
@@ -33,7 +40,7 @@ class LLMService(ABC):
 
 
 class MockLLMService(LLMService):
-    """Deterministic mock LLM — used in test env and as fallback."""
+    """Deterministic mock LLM used in test env and as fallback."""
 
     async def generate_persona_reply(
         self,
@@ -56,20 +63,20 @@ class MockLLMService(LLMService):
     ) -> str:
         questions_map: dict[str, list[str]] = {
             "TARGET_PROFILE": [
-                "이 사람이 평소 자주 하던 말은 무엇인가요?",
-                "이 사람을 세 단어로 표현하면 무엇인가요?",
-                "이 사람이 힘든 상황에서 자주 해주던 말은 무엇인가요?",
-                "이 사람과 가장 기억에 남는 에피소드는 무엇인가요?",
+                "What words did this person often use?",
+                "How would you describe this person in one sentence?",
+                "What did this person usually say in difficult moments?",
+                "What is one memory that shows this person's character well?",
             ],
             "PHOTO_MEMORY": [
-                "이 사진은 언제 찍은 사진인가요?",
-                "사진 속 사람들과는 어떤 관계였나요?",
-                "이날 가장 기억나는 감정은 무엇인가요?",
+                "When was this photo taken, and what was happening around that time?",
+                "Who appears in this photo, and what was your relationship with them?",
+                "What feeling do you remember most clearly from this day?",
             ],
             "SELF_STORY": [
-                "오늘 가장 기억에 남는 일은 무엇인가요?",
-                "나중에 가족이나 친구에게 남기고 싶은 말이 있나요?",
-                "지금의 나를 만든 중요한 사건은 무엇인가요?",
+                "What is one day from your life that you still remember clearly?",
+                "What story would you like your family or friends to remember?",
+                "What important event helped shape who you are today?",
             ],
         }
         order_index = len(previous_questions) + 1
@@ -91,41 +98,263 @@ class MockLLMService(LLMService):
                 answers = item.get("answers") or []
                 answer_text = " ".join(a for a in answers if a).strip()
                 if not answer_text:
-                    answer_text = "아직 답변이 기록되지 않았지만, 이 질문은 중요한 기억의 실마리로 남아 있습니다."
-                chapters.append({
-                    "title": f"Chapter {index}: {question[:40]}",
-                    "content": f"{question}\n\n{answer_text}",
-                    "summary": answer_text[:120],
-                    "order_index": index,
-                })
+                    answer_text = (
+                        "This question has not been answered yet, but it remains an "
+                        "important part of the memory record."
+                    )
+                chapters.append(
+                    {
+                        "title": f"Chapter {index}: {question[:40]}",
+                        "content": f"{question}\n\n{answer_text}",
+                        "summary": answer_text[:120],
+                        "order_index": index,
+                    }
+                )
         else:
             photo_title = photo_memory.get("photo_title") or title
             photo_description = (
                 photo_memory.get("photo_description")
-                or "사진에 담긴 순간을 중심으로 이야기를 구성했습니다."
+                or "This storybook was created around the remembered moment in the photo."
             )
-            chapters.append({
-                "title": f"Chapter 1: {photo_title}",
-                "content": photo_description,
-                "summary": photo_description[:120],
-                "order_index": 1,
-            })
+            chapters.append(
+                {
+                    "title": f"Chapter 1: {photo_title}",
+                    "content": photo_description,
+                    "summary": photo_description[:120],
+                    "order_index": 1,
+                }
+            )
 
-        source_label = "인터뷰" if interview_questions_answers else "사진 메모리"
+        source_label = "interview" if interview_questions_answers else "photo memory"
         summary = (
-            f"{source_label} 자료를 바탕으로 생성한 '{title}' 스토리북입니다. "
-            f"총 {len(chapters)}개의 챕터로 구성되었습니다."
+            f"'{title}' is a storybook generated from {source_label} material. "
+            f"It contains {len(chapters)} chapter(s)."
         )
         return {"summary": summary, "chapters": chapters}
 
 
-def get_llm_service() -> LLMService:
-    """Return the appropriate LLM service instance.
+class GeminiLLMService(LLMService):
+    """Gemini-backed LLM service with safe mock fallback."""
 
-    ENVIRONMENT=test → always MockLLMService.
-    Step 2 will add GeminiLLMService for development/production.
-    """
-    if settings.ENVIRONMENT == "test":
+    def __init__(self, api_key: str, model: str) -> None:
+        self.model = model
+        self._mock = MockLLMService()
+        try:
+            from google import genai
+
+            self._client = genai.Client(api_key=api_key)
+        except Exception:
+            self._client = None
+
+    async def generate_persona_reply(
+        self,
+        persona: dict,
+        recent_messages: list,
+        user_message: str,
+    ) -> str:
+        prompt = (
+            "You are writing a persona chat reply for Remory.\n"
+            "Reply in the persona's voice, warmly and naturally.\n"
+            "Keep the reply under 120 words.\n"
+            "Do not mention that you are an AI.\n\n"
+            f"Persona profile:\n{json.dumps(persona, ensure_ascii=False)}\n\n"
+            f"Recent messages:\n{json.dumps(recent_messages[-8:], ensure_ascii=False)}\n\n"
+            f"User message:\n{user_message}"
+        )
+        text = await self._generate_text(prompt, max_output_tokens=220, temperature=0.7)
+        if not text:
+            return await self._mock.generate_persona_reply(persona, recent_messages, user_message)
+        return self._limit_text(text, 700)
+
+    async def generate_interview_question(
+        self,
+        session_type: str,
+        previous_questions: list,
+    ) -> str:
+        prompt = (
+            "Generate one concise interview question for Remory.\n"
+            "The question should be empathetic, specific, and easy to answer.\n"
+            "Return only the question text. Keep it under 30 words.\n\n"
+            f"Session type: {session_type}\n"
+            f"Previous questions: {json.dumps(previous_questions[-10:], ensure_ascii=False)}"
+        )
+        text = await self._generate_text(prompt, max_output_tokens=80, temperature=0.6)
+        if not text:
+            return await self._mock.generate_interview_question(session_type, previous_questions)
+        return self._limit_text(text.strip().splitlines()[0], 220)
+
+    async def generate_storybook(
+        self,
+        title: str,
+        interview_questions_answers: list[dict],
+        photo_memory: dict | None = None,
+    ) -> dict:
+        photo_memory = photo_memory or {}
+        prompt = self._storybook_prompt(title, interview_questions_answers, photo_memory)
+        text = await self._generate_text(
+            prompt,
+            max_output_tokens=1600,
+            temperature=0.5,
+            response_mime_type="application/json",
+        )
+        if not text:
+            return await self._mock.generate_storybook(title, interview_questions_answers, photo_memory)
+
+        parsed = self._parse_json_object(text)
+        if not parsed:
+            return await self._mock.generate_storybook(title, interview_questions_answers, photo_memory)
+
+        normalized = self._normalize_storybook(parsed)
+        if not normalized:
+            return await self._mock.generate_storybook(title, interview_questions_answers, photo_memory)
+        return normalized
+
+    async def _generate_text(
+        self,
+        prompt: str,
+        *,
+        max_output_tokens: int,
+        temperature: float,
+        response_mime_type: str | None = None,
+    ) -> str | None:
+        if self._client is None:
+            return None
+        try:
+            return await asyncio.to_thread(
+                self._generate_text_sync,
+                prompt,
+                max_output_tokens,
+                temperature,
+                response_mime_type,
+            )
+        except Exception:
+            return None
+
+    def _generate_text_sync(
+        self,
+        prompt: str,
+        max_output_tokens: int,
+        temperature: float,
+        response_mime_type: str | None,
+    ) -> str | None:
+        from google.genai import types
+
+        config_kwargs: dict[str, Any] = {
+            "max_output_tokens": max_output_tokens,
+            "temperature": temperature,
+        }
+        if response_mime_type:
+            config_kwargs["response_mime_type"] = response_mime_type
+
+        response = self._client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config=types.GenerateContentConfig(**config_kwargs),
+        )
+        return getattr(response, "text", None)
+
+    @staticmethod
+    def _limit_text(value: str, max_chars: int) -> str:
+        value = re.sub(r"\s+", " ", value).strip()
+        if len(value) <= max_chars:
+            return value
+        return value[: max_chars - 3].rstrip() + "..."
+
+    @staticmethod
+    def _parse_json_object(value: str) -> dict | None:
+        value = value.strip()
+        if value.startswith("```"):
+            value = re.sub(r"^```(?:json)?\s*", "", value)
+            value = re.sub(r"\s*```$", "", value)
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            match = re.search(r"\{.*\}", value, flags=re.DOTALL)
+            if not match:
+                return None
+            try:
+                parsed = json.loads(match.group(0))
+            except json.JSONDecodeError:
+                return None
+        return parsed if isinstance(parsed, dict) else None
+
+    @classmethod
+    def _normalize_storybook(cls, data: dict) -> dict | None:
+        summary = data.get("summary")
+        chapters = data.get("chapters")
+        if not isinstance(summary, str) or not isinstance(chapters, list) or not chapters:
+            return None
+
+        normalized_chapters: list[dict] = []
+        for index, chapter in enumerate(chapters[:8], start=1):
+            if not isinstance(chapter, dict):
+                return None
+            title = chapter.get("title")
+            content = chapter.get("content")
+            if not isinstance(title, str) or not isinstance(content, str):
+                return None
+            raw_summary = chapter.get("summary")
+            chapter_summary = raw_summary if isinstance(raw_summary, str) else content[:120]
+            normalized_chapters.append(
+                {
+                    "title": cls._limit_text(title, 120),
+                    "content": cls._limit_text(content, 2400),
+                    "summary": cls._limit_text(chapter_summary, 300),
+                    "order_index": index,
+                }
+            )
+
+        return {
+            "summary": cls._limit_text(summary, 600),
+            "chapters": normalized_chapters,
+        }
+
+    @staticmethod
+    def _storybook_prompt(
+        title: str,
+        interview_questions_answers: list[dict],
+        photo_memory: dict,
+    ) -> str:
+        return (
+            "Create a Remory storybook from the provided source material.\n"
+            "Return valid JSON only. Do not include markdown fences or commentary.\n"
+            "The JSON must match this exact shape:\n"
+            "{\n"
+            '  "summary": "string, max 100 words",\n'
+            '  "chapters": [\n'
+            "    {\n"
+            '      "title": "string",\n'
+            '      "content": "string, 120-350 words",\n'
+            '      "summary": "string, max 40 words",\n'
+            '      "order_index": 1\n'
+            "    }\n"
+            "  ]\n"
+            "}\n"
+            "Create 1 to 5 chapters. Preserve factual details from the source. "
+            "Avoid inventing names, dates, or places that are not provided.\n\n"
+            f"Storybook title: {title}\n"
+            "Interview questions and answers:\n"
+            f"{json.dumps(interview_questions_answers, ensure_ascii=False)}\n\n"
+            "Photo memory context:\n"
+            f"{json.dumps(photo_memory, ensure_ascii=False)}"
+        )
+
+
+def _running_under_pytest() -> bool:
+    return "PYTEST_CURRENT_TEST" in os.environ
+
+
+def get_llm_service() -> LLMService:
+    """Return the configured LLM service instance."""
+
+    if settings.ENVIRONMENT == "test" or _running_under_pytest():
         return MockLLMService()
-    # Step 2: return GeminiLLMService when GEMINI_API_KEY is set
-    return MockLLMService()
+
+    api_key = settings.GEMINI_API_KEY.strip()
+    if not api_key:
+        return MockLLMService()
+
+    service = GeminiLLMService(api_key=api_key, model=settings.GEMINI_MODEL)
+    if service._client is None:
+        return MockLLMService()
+    return service
