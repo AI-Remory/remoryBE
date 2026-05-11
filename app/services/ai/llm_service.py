@@ -174,11 +174,28 @@ class GeminiLLMService(LLMService):
         session_type: str,
         previous_questions: list,
     ) -> str:
+        focus_by_type = {
+            "TARGET_PROFILE": (
+                "Ask about the target person's speaking style, personality, frequently "
+                "used phrases, memorable episodes, values, or way of responding to others."
+            ),
+            "PHOTO_MEMORY": (
+                "Ask about the photo's situation, people in the image, emotions, date, "
+                "place, surrounding context, or the memory connected to the moment."
+            ),
+            "SELF_STORY": (
+                "Ask about the user's life events, today's memories, turning points, "
+                "relationships, or messages they want to leave for others."
+            ),
+        }
+        focus = focus_by_type.get(session_type, focus_by_type["SELF_STORY"])
         prompt = (
             "Generate one concise interview question for Remory.\n"
             "The question should be empathetic, specific, and easy to answer.\n"
-            "Return only the question text. Keep it under 30 words.\n\n"
+            "Return only the question text. Keep it under 30 words.\n"
+            "Do not repeat or closely paraphrase any previous question.\n\n"
             f"Session type: {session_type}\n"
+            f"Question focus: {focus}\n"
             f"Previous questions: {json.dumps(previous_questions[-10:], ensure_ascii=False)}"
         )
         text = await self._generate_text(prompt, max_output_tokens=80, temperature=0.6)

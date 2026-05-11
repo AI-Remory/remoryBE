@@ -1,6 +1,6 @@
 """AI interview business logic."""
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload, with_loader_criteria
 
 from app.models.interview import (
@@ -113,18 +113,22 @@ class InterviewService:
         question_data: AIInterviewQuestionCreateRequest,
     ) -> AIInterviewQuestion:
         session = InterviewService._get_owned_session(db, session_id, user_id)
-        next_order_index = (
+        previous_questions = (
             db.execute(
-                select(func.count(AIInterviewQuestion.id)).where(
+                select(AIInterviewQuestion.question_text)
+                .where(
                     AIInterviewQuestion.session_id == session_id,
                 )
-            ).scalar()
-            or 0
-        ) + 1
+                .order_by(AIInterviewQuestion.order_index.asc(), AIInterviewQuestion.id.asc())
+            )
+            .scalars()
+            .all()
+        )
+        next_order_index = len(previous_questions) + 1
 
         question_text = await get_llm_service().generate_interview_question(
             session_type=session.session_type.value,
-            previous_questions=[""] * (next_order_index - 1),
+            previous_questions=previous_questions,
         )
         question = AIInterviewQuestion(
             session_id=session_id,
