@@ -32,6 +32,10 @@ class Settings(BaseSettings):
         "http://localhost:3000",
     ]
 
+    # Gemini AI
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.0-flash"
+
     # File Upload
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_SIZE: int = 52428800  # 50MB
@@ -40,5 +44,6 @@ class Settings(BaseSettings):
     def DATABASE_URL(self) -> str:
         """MySQL 연결 문자열 생성"""
         return f"mysql+pymysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DB}?charset=utf8mb4"
+
 
 settings = Settings()
