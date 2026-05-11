@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     STT_PROVIDER: str = "mock"
     WHISPER_MODEL_SIZE: str = "base"
 
+    # Text-to-Speech
+    TTS_PROVIDER: str = "mock"
+
     # File Upload
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_SIZE: int = 52428800  # 50MB
