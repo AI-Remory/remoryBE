@@ -17,7 +17,7 @@ from app.schemas.interview import (
     AIInterviewQuestionCreateRequest,
     AIInterviewSessionCreateRequest,
 )
-from app.services.ai_service import ai_service
+from app.services.ai import get_llm_service
 from app.utils.exceptions import ForbiddenException, NotFoundException, ValidationException
 
 
@@ -122,13 +122,9 @@ class InterviewService:
             or 0
         ) + 1
 
-        question_text = await ai_service.generate_mock_interview_question(
+        question_text = await get_llm_service().generate_interview_question(
             session_type=session.session_type.value,
-            order_index=next_order_index,
-            context={
-                "target_id": session.target_id,
-                "photo_memory_id": session.photo_memory_id,
-            },
+            previous_questions=[""] * (next_order_index - 1),
         )
         question = AIInterviewQuestion(
             session_id=session_id,
