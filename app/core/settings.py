@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.0-flash"
 
+    # Speech-to-Text
+    STT_PROVIDER: str = "mock"
+    WHISPER_MODEL_SIZE: str = "base"
+
     # File Upload
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_SIZE: int = 52428800  # 50MB
