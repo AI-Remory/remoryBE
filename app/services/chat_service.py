@@ -7,7 +7,7 @@ from app.models.chat import MessageType, PersonaChat, PersonaMessage, SenderType
 from app.models.persona import Persona, PersonaStatus
 from app.models.target import Target
 from app.schemas.chat import PersonaChatCreateRequest, PersonaMessageCreateRequest
-from app.services.ai_service import ai_service
+from app.services.ai import get_llm_service
 from app.utils.exceptions import ForbiddenException, NotFoundException, ValidationException
 
 
@@ -124,9 +124,10 @@ class ChatService:
         db.add(user_message)
         db.flush()
 
-        reply_content = await ai_service.generate_mock_persona_reply(
+        reply_content = await get_llm_service().generate_persona_reply(
+            persona=ChatService._build_persona_profile(persona),
+            recent_messages=[],
             user_message=message_data.content or "",
-            persona_profile=ChatService._build_persona_profile(persona),
         )
         persona_message = PersonaMessage(
             chat_id=chat_id,

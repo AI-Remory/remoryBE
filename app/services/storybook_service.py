@@ -13,7 +13,7 @@ from app.models.storybook import (
     StoryChapter,
 )
 from app.schemas.storybook import StoryBookCreateRequest
-from app.services.ai_service import ai_service
+from app.services.ai import get_llm_service
 from app.utils.exceptions import ForbiddenException, NotFoundException, ValidationException
 
 
@@ -154,11 +154,10 @@ class StoryBookService:
             photo_memory = StoryBookService._get_owned_photo_memory(db, user_id, storybook_data.photo_memory_id)
 
         source_type = StoryBookService._source_type(interview_session, photo_memory)
-        generated = await ai_service.generate_mock_storybook(
+        generated = await get_llm_service().generate_storybook(
             title=storybook_data.title,
-            source_type=source_type.value,
-            source_context=StoryBookService._source_context(photo_memory),
-            interview_items=StoryBookService._interview_items(interview_session),
+            interview_questions_answers=StoryBookService._interview_items(interview_session),
+            photo_memory=StoryBookService._source_context(photo_memory),
         )
 
         storybook = StoryBook(
@@ -217,11 +216,10 @@ class StoryBookService:
         if storybook.photo_memory_id is not None:
             photo_memory = StoryBookService._get_owned_photo_memory(db, user_id, storybook.photo_memory_id)
 
-        generated = await ai_service.generate_mock_storybook(
+        generated = await get_llm_service().generate_storybook(
             title=storybook.title,
-            source_type=storybook.source_type.value,
-            source_context=StoryBookService._source_context(photo_memory),
-            interview_items=StoryBookService._interview_items(interview_session),
+            interview_questions_answers=StoryBookService._interview_items(interview_session),
+            photo_memory=StoryBookService._source_context(photo_memory),
         )
         storybook.summary = generated["summary"]
         storybook.status = StoryBookStatus.GENERATED
