@@ -45,4 +45,5 @@ class Settings(BaseSettings):
         """MySQL 연결 문자열 생성"""
         return f"mysql+pymysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DB}?charset=utf8mb4"
 
+
 settings = Settings()
