@@ -300,9 +300,15 @@ class GeminiLLMService(LLMService):
 
     @classmethod
     def _normalize_storybook(cls, data: dict) -> dict | None:
+        generated_title = data.get("title")
         summary = data.get("summary")
         chapters = data.get("chapters")
-        if not isinstance(summary, str) or not isinstance(chapters, list) or not chapters:
+        if (
+            not isinstance(generated_title, str)
+            or not isinstance(summary, str)
+            or not isinstance(chapters, list)
+            or not chapters
+        ):
             return None
 
         normalized_chapters: list[dict] = []
@@ -325,6 +331,7 @@ class GeminiLLMService(LLMService):
             )
 
         return {
+            "title": cls._limit_text(generated_title, 160),
             "summary": cls._limit_text(summary, 600),
             "chapters": normalized_chapters,
         }
@@ -340,17 +347,18 @@ class GeminiLLMService(LLMService):
             "Return valid JSON only. Do not include markdown fences or commentary.\n"
             "The JSON must match this exact shape:\n"
             "{\n"
+            '  "title": "string",\n'
             '  "summary": "string, max 100 words",\n'
             '  "chapters": [\n'
             "    {\n"
             '      "title": "string",\n'
-            '      "content": "string, 120-350 words",\n'
             '      "summary": "string, max 40 words",\n'
-            '      "order_index": 1\n'
+            '      "content": "string, 120-350 words"\n'
             "    }\n"
             "  ]\n"
             "}\n"
-            "Create 1 to 5 chapters. Preserve factual details from the source. "
+            "The chapters array must contain at least one chapter and no more than five. "
+            "Preserve factual details from the source. "
             "Avoid inventing names, dates, or places that are not provided.\n\n"
             f"Storybook title: {title}\n"
             "Interview questions and answers:\n"
