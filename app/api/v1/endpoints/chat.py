@@ -1,6 +1,6 @@
 """Persona chat API."""
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, File, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -68,6 +68,33 @@ async def create_chat_message(
             user_id=current_user.id,
             chat_id=chat_id,
             message_data=message_data,
+        )
+        return PersonaMessagePairResponse(
+            user_message=user_message,
+            persona_message=persona_message,
+        )
+    except RemoryException as e:
+        raise to_http_exception(e)
+
+
+@router.post(
+    "/chats/{chat_id}/audio",
+    response_model=PersonaMessagePairResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_chat_audio_message(
+    chat_id: int,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create a user audio message, transcribe it, and create a persona reply."""
+    try:
+        user_message, persona_message = await chat_service.create_audio_message_pair(
+            db=db,
+            user_id=current_user.id,
+            chat_id=chat_id,
+            upload_file=file,
         )
         return PersonaMessagePairResponse(
             user_message=user_message,

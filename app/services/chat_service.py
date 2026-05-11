@@ -1,5 +1,10 @@
 """Persona chat business logic."""
 
+from datetime import datetime
+from pathlib import Path
+from uuid import uuid4
+
+from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
@@ -8,7 +13,9 @@ from app.models.persona import Persona, PersonaStatus
 from app.models.target import Target
 from app.schemas.chat import PersonaChatCreateRequest, PersonaMessageCreateRequest
 from app.services.ai import get_llm_service
-from app.utils.exceptions import ForbiddenException, NotFoundException, ValidationException
+from app.services.speech import get_stt_service
+from app.utils.constants import MAX_UPLOAD_SIZE, UPLOAD_DIR
+from app.utils.exceptions import FileUploadException, ForbiddenException, NotFoundException, ValidationException
 
 
 class ChatService:
@@ -124,6 +131,37 @@ class ChatService:
             raise ValidationException("Audio messages require audio_file_path")
 
     @staticmethod
+    async def _save_chat_audio_file(user_id: int, upload_file: UploadFile) -> str:
+        if not upload_file.content_type or not upload_file.content_type.startswith("audio/"):
+            raise FileUploadException("Invalid audio MIME type")
+
+        contents = await upload_file.read()
+        if len(contents) > MAX_UPLOAD_SIZE:
+            raise FileUploadException(f"File size exceeds maximum limit ({MAX_UPLOAD_SIZE} bytes)")
+
+        original_name = Path(upload_file.filename or "audio").name
+        file_ext = Path(original_name).suffix.lower()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{timestamp}_{uuid4().hex}{file_ext}"
+        upload_dir = Path(UPLOAD_DIR) / "chat_audio" / str(user_id)
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        file_path = upload_dir / filename
+        file_path.write_bytes(contents)
+        return str(file_path)
+
+    @staticmethod
+    async def _generate_persona_reply(
+        persona: Persona,
+        recent_messages: list[dict],
+        user_message_text: str,
+    ) -> str:
+        return await get_llm_service().generate_persona_reply(
+            persona=ChatService._build_persona_profile(persona),
+            recent_messages=recent_messages,
+            user_message=user_message_text,
+        )
+
+    @staticmethod
     async def create_message_pair(
         db: Session,
         user_id: int,
@@ -149,16 +187,63 @@ class ChatService:
         db.add(user_message)
         db.flush()
 
-        reply_content = await get_llm_service().generate_persona_reply(
-            persona=ChatService._build_persona_profile(persona),
+        reply_content = await ChatService._generate_persona_reply(
+            persona=persona,
             recent_messages=recent_messages,
-            user_message=message_data.content or "",
+            user_message_text=message_data.content or "",
         )
         persona_message = PersonaMessage(
             chat_id=chat_id,
             sender_type=SenderType.PERSONA,
             message_type=MessageType.TEXT,
             content=reply_content,
+            is_ai_generated=True,
+        )
+        db.add(persona_message)
+        db.commit()
+        db.refresh(user_message)
+        db.refresh(persona_message)
+        return user_message, persona_message
+
+    @staticmethod
+    async def create_audio_message_pair(
+        db: Session,
+        user_id: int,
+        chat_id: int,
+        upload_file: UploadFile,
+    ) -> tuple[PersonaMessage, PersonaMessage]:
+        chat = ChatService._get_owned_chat(db, chat_id, user_id)
+        persona = chat.persona
+
+        if persona.status != PersonaStatus.READY:
+            raise ValidationException("Persona is not ready")
+
+        recent_messages = ChatService._recent_messages(db, chat_id)
+        audio_file_path = await ChatService._save_chat_audio_file(user_id, upload_file)
+        stt_result = await get_stt_service().transcribe(audio_file_path)
+
+        user_message = PersonaMessage(
+            chat_id=chat_id,
+            sender_type=SenderType.USER,
+            message_type=MessageType.AUDIO,
+            content=stt_result.text,
+            audio_file_path=audio_file_path,
+            is_ai_generated=False,
+        )
+        db.add(user_message)
+        db.flush()
+
+        reply_content = await ChatService._generate_persona_reply(
+            persona=persona,
+            recent_messages=recent_messages,
+            user_message_text=stt_result.text,
+        )
+        persona_message = PersonaMessage(
+            chat_id=chat_id,
+            sender_type=SenderType.PERSONA,
+            message_type=MessageType.TEXT,
+            content=reply_content,
+            audio_file_path=None,
             is_ai_generated=True,
         )
         db.add(persona_message)

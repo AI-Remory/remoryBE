@@ -62,6 +62,46 @@ def test_send_persona_message_passes_context_to_llm(client, auth_headers, create
     assert second_call["recent_messages"][0]["content"] == "First message"
 
 
+def test_send_persona_audio_message_uses_stt_and_creates_reply(client, auth_headers, created_chat):
+    response = client.post(
+        f"/api/v1/chats/{created_chat['id']}/audio",
+        files={"file": ("voice.wav", b"fake audio content", "audio/wav")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["user_message"]["sender_type"] == "USER"
+    assert payload["user_message"]["message_type"] == "AUDIO"
+    assert payload["user_message"]["content"] == "테스트용 음성 변환 결과입니다."
+    assert payload["user_message"]["audio_file_path"]
+    assert "uploads" in payload["user_message"]["audio_file_path"]
+    assert payload["persona_message"]["sender_type"] == "PERSONA"
+    assert payload["persona_message"]["message_type"] == "TEXT"
+    assert payload["persona_message"]["audio_file_path"] is None
+    assert payload["persona_message"]["is_ai_generated"] is True
+
+
+def test_send_persona_audio_message_rejects_non_audio_mime(client, auth_headers, created_chat):
+    response = client.post(
+        f"/api/v1/chats/{created_chat['id']}/audio",
+        files={"file": ("voice.txt", b"not audio", "text/plain")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 400
+
+
+def test_other_user_cannot_send_persona_audio_message(client, created_chat, second_user_headers):
+    response = client.post(
+        f"/api/v1/chats/{created_chat['id']}/audio",
+        files={"file": ("voice.wav", b"fake audio content", "audio/wav")},
+        headers=second_user_headers,
+    )
+
+    assert response.status_code in (403, 404)
+
+
 def test_list_chat_messages(client, auth_headers, created_chat):
     client.post(
         f"/api/v1/chats/{created_chat['id']}/messages",
