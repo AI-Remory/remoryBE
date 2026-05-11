@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_SIZE: int = 52428800  # 50MB
 
+    # Rate Limiting & Usage Limits
+    MONTHLY_USER_VOICE_GENERATION_LIMIT: int = 1000  # Voice synthesis calls per month
+    MONTHLY_PERSONA_VOICE_GENERATION_LIMIT: int = 500  # Per persona per month
+    MONTHLY_USER_STT_REQUEST_LIMIT: int = 500  # STT requests per month
+    MONTHLY_USER_VOICE_CALL_SECONDS_LIMIT: int = 3600  # 1 hour per month
+    RATE_LIMIT_REQUESTS_PER_MINUTE_DEFAULT: int = 60  # Default: 60 requests per minute
+    RATE_LIMIT_REQUESTS_PER_MINUTE_VOICE: int = 10  # Voice endpoints: 10 per minute
+
     @property
     def DATABASE_URL(self) -> str:
         """MySQL 연결 문자열 생성"""

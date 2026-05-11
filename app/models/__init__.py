@@ -26,6 +26,8 @@ from app.models.sharing import GroupMember, GroupMemberRole, GroupStoryBook, Mem
 from app.models.consent import ConsentLog, ConsentType
 from app.models.deletion import DeletionItemType, DeletionRequest, DeletionStatus, DeletionTargetType
 from app.models.target_verification import TargetVerificationRequest, VerificationType, VerificationStatus
+from app.models.usage_limit import UsageLimit, PersonaUsageLimit, RateLimitEvent
+from app.models.audit_log import AuditLog
 
 __all__ = [
     "Base",
@@ -72,4 +74,10 @@ __all__ = [
     "TargetVerificationRequest",
     "VerificationType",
     "VerificationStatus",
+    "UsageLimit",
+    "PersonaUsageLimit",
+    "RateLimitEvent",
+    "AuditLog",
 ]
+
+

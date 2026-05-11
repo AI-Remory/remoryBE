@@ -19,8 +19,16 @@ from app.schemas.target_verification import (
     VerificationRequestRejectRequest,
     VerificationRequestRevokeRequest,
 )
+from app.schemas.usage_limit import (
+    UsageLimitResponse,
+    PersonaUsageLimitResponse,
+    RateLimitEventResponse,
+    UpdateUsageLimitRequest,
+    UpdatePersonaUsageLimitRequest,
+)
 from app.services.audit_log_service import AuditLogService
 from app.services.deletion_service import deletion_service
+from app.services.rate_limit_service import RateLimitService
 from app.services.verification_service import verification_service
 from app.utils.exceptions import RemoryException, to_http_exception
 
@@ -341,3 +349,157 @@ async def list_audit_logs(
             detail=str(exc),
         ) from exc
 
+
+@router.get("/usage-limits", response_model=PaginatedResponse[UsageLimitResponse])
+async def list_usage_limits(
+    user_id: int | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=20, ge=1, le=100),
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """List user usage limits (admin only)."""
+    try:
+        result = RateLimitService.list_user_usage_limits(
+            db,
+            skip=(page - 1) * size,
+            limit=size,
+        )
+
+        # Build response with remaining counts
+        items_response = []
+        for item in result["items"]:
+            items_response.append({
+                "id": item.id,
+                "user_id": item.user_id,
+                "period_ym": item.period_ym,
+                "voice_generation_count": item.voice_generation_count,
+                "voice_generation_limit": item.voice_generation_limit,
+                "voice_generation_remaining": item.voice_generation_limit - item.voice_generation_count,
+                "stt_request_count": item.stt_request_count,
+                "stt_request_limit": item.stt_request_limit,
+                "stt_request_remaining": item.stt_request_limit - item.stt_request_count,
+                "voice_call_seconds": item.voice_call_seconds,
+                "voice_call_seconds_limit": item.voice_call_seconds_limit,
+                "voice_call_seconds_remaining": item.voice_call_seconds_limit - item.voice_call_seconds,
+                "created_at": item.created_at,
+                "updated_at": item.updated_at,
+            })
+
+        return PaginatedResponse(
+            total=result["total"],
+            skip=(page - 1) * size,
+            limit=size,
+            items=items_response,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+
+@router.patch("/users/{user_id}/usage-limit", response_model=UsageLimitResponse)
+async def update_user_usage_limit(
+    user_id: int,
+    update_data: UpdateUsageLimitRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Update user usage limit (admin only)."""
+    try:
+        usage_limit = RateLimitService.update_user_usage_limit(
+            db,
+            user_id,
+            voice_generation_limit=update_data.voice_generation_limit,
+            stt_request_limit=update_data.stt_request_limit,
+            voice_call_seconds_limit=update_data.voice_call_seconds_limit,
+        )
+
+        return {
+            "id": usage_limit.id,
+            "user_id": usage_limit.user_id,
+            "period_ym": usage_limit.period_ym,
+            "voice_generation_count": usage_limit.voice_generation_count,
+            "voice_generation_limit": usage_limit.voice_generation_limit,
+            "voice_generation_remaining": usage_limit.voice_generation_limit - usage_limit.voice_generation_count,
+            "stt_request_count": usage_limit.stt_request_count,
+            "stt_request_limit": usage_limit.stt_request_limit,
+            "stt_request_remaining": usage_limit.stt_request_limit - usage_limit.stt_request_count,
+            "voice_call_seconds": usage_limit.voice_call_seconds,
+            "voice_call_seconds_limit": usage_limit.voice_call_seconds_limit,
+            "voice_call_seconds_remaining": usage_limit.voice_call_seconds_limit - usage_limit.voice_call_seconds,
+            "created_at": usage_limit.created_at,
+            "updated_at": usage_limit.updated_at,
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+
+@router.patch("/personas/{persona_id}/usage-limit", response_model=PersonaUsageLimitResponse)
+async def update_persona_usage_limit(
+    persona_id: int,
+    update_data: UpdatePersonaUsageLimitRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Update persona usage limit (admin only)."""
+    try:
+        usage_limit = RateLimitService.update_persona_usage_limit(
+            db,
+            persona_id,
+            voice_generation_limit=update_data.voice_generation_limit,
+            voice_call_seconds_limit=update_data.voice_call_seconds_limit,
+        )
+
+        return {
+            "id": usage_limit.id,
+            "persona_id": usage_limit.persona_id,
+            "period_ym": usage_limit.period_ym,
+            "voice_generation_count": usage_limit.voice_generation_count,
+            "voice_generation_limit": usage_limit.voice_generation_limit,
+            "voice_generation_remaining": usage_limit.voice_generation_limit - usage_limit.voice_generation_count,
+            "voice_call_seconds": usage_limit.voice_call_seconds,
+            "voice_call_seconds_limit": usage_limit.voice_call_seconds_limit,
+            "voice_call_seconds_remaining": usage_limit.voice_call_seconds_limit - usage_limit.voice_call_seconds,
+            "created_at": usage_limit.created_at,
+            "updated_at": usage_limit.updated_at,
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/rate-limit-events", response_model=PaginatedResponse[RateLimitEventResponse])
+async def list_rate_limit_events(
+    user_id: int | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=20, ge=1, le=100),
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """List rate limit events (admin only)."""
+    try:
+        result = RateLimitService.list_rate_limit_events(
+            db,
+            user_id=user_id,
+            skip=(page - 1) * size,
+            limit=size,
+        )
+
+        return PaginatedResponse(
+            total=result["total"],
+            skip=(page - 1) * size,
+            limit=size,
+            items=result["items"],
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc

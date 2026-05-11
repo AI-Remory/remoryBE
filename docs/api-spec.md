@@ -45,6 +45,47 @@ Authorization: Bearer {access_token}
 - `403`: 소유권/권한 없음
 - `404`: 리소스 없음
 - `422`: request body, form, enum 등 검증 실패
+- `429`: 속도 제한 초과 또는 월간 사용량 초과
+
+### Rate Limiting & Usage Limits
+
+Remory는 다음 기능에 대해 사용자별, persona별 월간 사용량 제한을 시행한다:
+
+#### Monthly Usage Limits (Per User)
+
+| 제한 항목 | 기본값 | 설명 |
+|----------|--------|------|
+| Voice Generation | 1000 | TTS/음성합성 호출 월간 제한 |
+| STT Requests | 500 | 음성-텍스트 변환 요청 월간 제한 |
+| Voice Call Duration | 3600s | 음성 통화 총 시간(초) 월간 제한 |
+
+#### Monthly Usage Limits (Per Persona)
+
+| 제한 항목 | 기본값 | 설명 |
+|----------|--------|------|
+| Voice Generation | 500 | persona별 TTS/합성 호출 월간 제한 |
+| Voice Call Duration | 3600s | persona별 음성 통화 시간 월간 제한 |
+
+#### Rate Limit Exceeded Response
+
+사용량 제한을 초과하면 HTTP 429 응답을 반환한다:
+
+```json
+{
+  "detail": "Monthly voice generation limit exceeded. Limit: 1000"
+}
+```
+
+#### Tracked Events
+
+다음 비정상 요청은 RateLimitEvent로 기록된다:
+
+- 포즈 제한 초과 (주당 X 요청)
+- 잘못된 MIME 타입의 오디오 파일 업로드
+- 파일 크기 초과 업로드 시도
+- 너무 짧은 시간 내 반복 호출
+- 인증 실패 반복
+- 존재하지 않는 리소스 반복 접근
 
 ### File Upload
 
@@ -2009,3 +2050,141 @@ Response:
 - `RATE_LIMIT_BLOCKED`: API 속도 제한으로 요청 차단
 - `ABNORMAL_REQUEST_BLOCKED`: 비정상 요청 감지로 차단
 
+## U. Admin: Usage Limits & Rate Limiting
+
+사용량 제한과 속도 제한을 관리하는 관리자 전용 API입니다.
+
+### List User Usage Limits (Admin)
+
+- Method: `GET`
+- URL: `/api/v1/admin/usage-limits`
+- Auth: Yes (Admin only)
+- Description: 사용자 월간 사용량 제한을 조회한다.
+
+Query parameters:
+
+- `page` (optional, default=1): 페이지 번호 (1-indexed)
+- `size` (optional, default=20): 페이지 크기 (1-100)
+
+Response:
+
+```json
+{
+  "total": 10,
+  "skip": 0,
+  "limit": 20,
+  "items": [
+    {
+      "id": 1,
+      "user_id": 1,
+      "period_ym": "2026-05",
+      "voice_generation_count": 100,
+      "voice_generation_limit": 1000,
+      "voice_generation_remaining": 900,
+      "stt_request_count": 50,
+      "stt_request_limit": 500,
+      "stt_request_remaining": 450,
+      "voice_call_seconds": 1800,
+      "voice_call_seconds_limit": 3600,
+      "voice_call_seconds_remaining": 1800,
+      "created_at": "2026-05-12T10:00:00",
+      "updated_at": "2026-05-12T10:00:00"
+    }
+  ]
+}
+```
+
+Errors: `401`, `403`
+
+### Update User Usage Limit (Admin)
+
+- Method: `PATCH`
+- URL: `/api/v1/admin/users/{user_id}/usage-limit`
+- Auth: Yes (Admin only)
+- Description: 사용자의 월간 사용량 제한을 조정한다.
+
+Request:
+
+```json
+{
+  "voice_generation_limit": 2000,
+  "stt_request_limit": 1000,
+  "voice_call_seconds_limit": 7200
+}
+```
+
+Response: Usage usage limit response.
+
+Errors: `401`, `403`, `404`
+
+### Update Persona Usage Limit (Admin)
+
+- Method: `PATCH`
+- URL: `/api/v1/admin/personas/{persona_id}/usage-limit`
+- Auth: Yes (Admin only)
+- Description: persona의 월간 사용량 제한을 조정한다.
+
+Request:
+
+```json
+{
+  "voice_generation_limit": 1000,
+  "voice_call_seconds_limit": 7200
+}
+```
+
+Response: Persona usage limit response.
+
+Errors: `401`, `403`, `404`
+
+### List Rate Limit Events (Admin)
+
+- Method: `GET`
+- URL: `/api/v1/admin/rate-limit-events`
+- Auth: Yes (Admin only)
+- Description: 속도 제한 및 비정상 요청 차단 이벤트를 조회한다.
+
+Query parameters:
+
+- `user_id` (optional): 특정 사용자의 이벤트만 필터링
+- `page` (optional, default=1): 페이지 번호
+- `size` (optional, default=20): 페이지 크기
+
+Response:
+
+```json
+{
+  "total": 5,
+  "skip": 0,
+  "limit": 20,
+  "items": [
+    {
+      "id": 1,
+      "user_id": 1,
+      "ip_address": "127.0.0.1",
+      "endpoint": "/api/v1/chats/1/messages",
+      "event_type": "voice_generation",
+      "count": 1,
+      "window_seconds": 60,
+      "blocked": true,
+      "reason": "Monthly voice generation limit exceeded",
+      "created_at": "2026-05-12T10:00:00"
+    }
+  ]
+}
+```
+
+Errors: `401`, `403`
+
+### Rate Limit Event Types
+
+다음 이벤트 타입이 기록된다:
+
+- `voice_generation`: 음성 생성 제한 초과
+- `stt_request`: STT 요청  제한 초과
+- `voice_call_seconds`: 음성 통화 시간 제한 초과
+- `invalid_mime_type`: 허용되지 않는 MIME 타입
+- `file_too_large`: 파일 크기 초과
+- `rapid_requests`: 너무 짧은 시간 내 반복 요청
+- `auth_failures`: 인증 실패 반복
+- `not_found_repeated`: 존재하지 않는 리소스 반복 접근
