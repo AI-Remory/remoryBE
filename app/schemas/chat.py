@@ -25,6 +25,7 @@ class PersonaMessageCreateRequest(BaseModel):
     message_type: MessageType = MessageType.TEXT
     content: Optional[str] = None
     audio_file_path: Optional[str] = None
+    generate_audio: bool = False
 
 
 class PersonaMessageResponse(BaseModel):

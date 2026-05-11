@@ -1,6 +1,6 @@
 """Persona chat API."""
 
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -85,6 +85,7 @@ async def create_chat_message(
 async def create_chat_audio_message(
     chat_id: int,
     file: UploadFile = File(...),
+    generate_audio: bool = Form(False),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -95,6 +96,7 @@ async def create_chat_audio_message(
             user_id=current_user.id,
             chat_id=chat_id,
             upload_file=file,
+            generate_audio=generate_audio,
         )
         return PersonaMessagePairResponse(
             user_message=user_message,

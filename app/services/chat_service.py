@@ -13,7 +13,7 @@ from app.models.persona import Persona, PersonaStatus
 from app.models.target import Target
 from app.schemas.chat import PersonaChatCreateRequest, PersonaMessageCreateRequest
 from app.services.ai import get_llm_service
-from app.services.speech import get_stt_service
+from app.services.speech import get_stt_service, get_tts_service
 from app.utils.constants import MAX_UPLOAD_SIZE, UPLOAD_DIR
 from app.utils.exceptions import FileUploadException, ForbiddenException, NotFoundException, ValidationException
 
@@ -150,6 +150,15 @@ class ChatService:
         return str(file_path)
 
     @staticmethod
+    async def _synthesize_persona_audio(user_id: int, reply_text: str) -> str:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{timestamp}_{uuid4().hex}.wav"
+        output_dir = Path(UPLOAD_DIR) / "chat_tts" / str(user_id)
+        output_path = output_dir / filename
+        result = await get_tts_service().synthesize(reply_text, str(output_path))
+        return result.audio_file_path
+
+    @staticmethod
     async def _generate_persona_reply(
         persona: Persona,
         recent_messages: list[dict],
@@ -197,6 +206,11 @@ class ChatService:
             sender_type=SenderType.PERSONA,
             message_type=MessageType.TEXT,
             content=reply_content,
+            audio_file_path=(
+                await ChatService._synthesize_persona_audio(user_id, reply_content)
+                if message_data.generate_audio
+                else None
+            ),
             is_ai_generated=True,
         )
         db.add(persona_message)
@@ -211,6 +225,7 @@ class ChatService:
         user_id: int,
         chat_id: int,
         upload_file: UploadFile,
+        generate_audio: bool = False,
     ) -> tuple[PersonaMessage, PersonaMessage]:
         chat = ChatService._get_owned_chat(db, chat_id, user_id)
         persona = chat.persona
@@ -243,7 +258,11 @@ class ChatService:
             sender_type=SenderType.PERSONA,
             message_type=MessageType.TEXT,
             content=reply_content,
-            audio_file_path=None,
+            audio_file_path=(
+                await ChatService._synthesize_persona_audio(user_id, reply_content)
+                if generate_audio
+                else None
+            ),
             is_ai_generated=True,
         )
         db.add(persona_message)

@@ -41,7 +41,7 @@ def _cleanup_uploads() -> None:
     if not uploads_root.exists():
         return
 
-    for relative_dir in ("images", "voices", "photo_memories", "verifications", "chat_audio"):
+    for relative_dir in ("images", "voices", "photo_memories", "verifications", "chat_audio", "chat_tts"):
         target_dir = uploads_root / relative_dir
         if not target_dir.exists():
             continue

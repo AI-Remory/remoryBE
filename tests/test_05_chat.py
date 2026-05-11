@@ -33,6 +33,26 @@ def test_send_persona_message(client, auth_headers, created_chat):
     assert payload["persona_message"]["is_ai_generated"] is True
 
 
+def test_send_persona_message_can_generate_audio(client, auth_headers, created_chat):
+    response = client.post(
+        f"/api/v1/chats/{created_chat['id']}/messages",
+        json={
+            "message_type": "TEXT",
+            "content": "Tell me about this memory.",
+            "generate_audio": True,
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["persona_message"]["sender_type"] == "PERSONA"
+    assert payload["persona_message"]["message_type"] == "TEXT"
+    assert payload["persona_message"]["audio_file_path"]
+    assert "uploads" in payload["persona_message"]["audio_file_path"]
+    assert payload["persona_message"]["is_ai_generated"] is True
+
+
 def test_send_persona_message_passes_context_to_llm(client, auth_headers, created_chat, monkeypatch):
     llm_service = CapturingLLMService()
     monkeypatch.setattr("app.services.chat_service.get_llm_service", lambda: llm_service)
@@ -80,6 +100,22 @@ def test_send_persona_audio_message_uses_stt_and_creates_reply(client, auth_head
     assert payload["persona_message"]["message_type"] == "TEXT"
     assert payload["persona_message"]["audio_file_path"] is None
     assert payload["persona_message"]["is_ai_generated"] is True
+
+
+def test_send_persona_audio_message_can_generate_audio_reply(client, auth_headers, created_chat):
+    response = client.post(
+        f"/api/v1/chats/{created_chat['id']}/audio",
+        data={"generate_audio": "true"},
+        files={"file": ("voice.wav", b"fake audio content", "audio/wav")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["user_message"]["message_type"] == "AUDIO"
+    assert payload["persona_message"]["message_type"] == "TEXT"
+    assert payload["persona_message"]["audio_file_path"]
+    assert "uploads" in payload["persona_message"]["audio_file_path"]
 
 
 def test_send_persona_audio_message_rejects_non_audio_mime(client, auth_headers, created_chat):
