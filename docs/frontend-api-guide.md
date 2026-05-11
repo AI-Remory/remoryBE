@@ -562,3 +562,87 @@ verification 관련 문서 파일 경로는 사용자에게 직접 노출하지 
 이 문서는 현재 구현된 API 경로를 기준으로 작성되었다.
 추가 엔드포인트가 생기면 같은 형식으로 확장하면 된다.
 
+
+---
+
+## 11. Granular Consent Flow
+
+The backend now stores consent as detailed history rows and supports revocation.
+Frontend screens should create consent before enabling AI persona, upload, voice cloning, or sharing actions.
+
+### Consent Types
+
+Use these request values:
+
+| Purpose | `consent_type` |
+| --- | --- |
+| Target profile data | `target_profile_consent` |
+| Photo upload | `photo_upload_consent` |
+| Voice upload | `voice_upload_consent` |
+| Voice cloning | `voice_cloning_consent` |
+| AI persona creation | `ai_persona_creation_consent` |
+| AI response notice | `ai_response_notice_consent` |
+| StoryBook link share | `storybook_share_consent` |
+| Group share | `group_share_consent` |
+| Data retention | `data_retention_consent` |
+| Third-party AI processing | `third_party_ai_processing_consent` |
+
+### Create Consent
+
+```ts
+await api.post("/api/v1/consents", {
+  target_id: targetId,
+  consent_type: "ai_persona_creation_consent",
+  consent_version: "2026-05-12",
+  consent_text_snapshot: "사용자가 AI 페르소나 생성을 동의했습니다.",
+  is_agreed: true,
+});
+```
+
+Target-scoped consent must use a target owned by the current user.
+For global consent such as StoryBook share, group share, data retention, or third-party AI processing, send `target_id: null`.
+
+### Read Consent State
+
+```ts
+const all = await api.get("/api/v1/consents");
+const targetConsents = await api.get(`/api/v1/targets/${targetId}/consents`);
+```
+
+Both list endpoints return newest records first. For UI state, group by `target_id + consent_type` and use the first row as the latest state.
+
+### Revoke Consent
+
+```ts
+await api.patch(`/api/v1/consents/${consentId}/revoke`);
+```
+
+After revoke:
+
+- `is_agreed` is `false`
+- `revoked_at` is set
+- Persona/voice/share policy checks no longer accept that consent
+
+### Required Consent Before Actions
+
+Before enabling Persona creation:
+
+- `ai_persona_creation_consent`
+- `ai_response_notice_consent`
+
+Before media upload:
+
+- Photo: `photo_upload_consent`
+- Voice: `voice_upload_consent`
+
+Before voice profile creation:
+
+- `voice_upload_consent`
+- `voice_cloning_consent`
+
+Before sharing:
+
+- Share link: `storybook_share_consent`
+- Group share: `group_share_consent`
+
+Legacy consent values are still accepted for backward compatibility, but new frontend code should use the granular values above.

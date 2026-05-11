@@ -87,11 +87,13 @@ class PersonaService:
 
     @staticmethod
     def _ensure_voice_profile_creation_allowed(db: Session, user_id: int, target_id: int) -> None:
-        # TODO: Enforce once policy work lands:
-        # - TargetVerificationRequest status must be APPROVED for this target.
-        # - ConsentLog must include explicit VOICE_CLONING consent.
-        # Current MVP keeps the checkpoint here without blocking existing flows.
-        return None
+        # Policy checkpoint: relationship verification and explicit voice cloning
+        # consent must be present before cloned voice assets are created.
+        verification = verification_service.get_approved_verification_for_target(db, target_id)
+        if verification is None:
+            raise ForbiddenException("Target verification approval is required before voice cloning.")
+        consent_service.check_consent(db, user_id, target_id, ConsentType.VOICE_UPLOAD_CONSENT)
+        consent_service.check_consent(db, user_id, target_id, ConsentType.VOICE_CLONING_CONSENT)
 
     @staticmethod
     async def create_persona(db: Session, target_id: int, user_id: int) -> Persona:
@@ -105,11 +107,12 @@ class PersonaService:
         image_count = PersonaService._count_media(db, target_id, MediaType.IMAGE)
         voice_count = PersonaService._count_media(db, target_id, MediaType.VOICE)
 
-        consent_service.check_consent(db, user_id, target_id, ConsentType.PERSONA_CREATION)
+        consent_service.check_consent(db, user_id, target_id, ConsentType.AI_PERSONA_CREATION_CONSENT)
+        consent_service.check_consent(db, user_id, target_id, ConsentType.AI_RESPONSE_NOTICE_CONSENT)
         if image_count > 0:
-            consent_service.check_consent(db, user_id, target_id, ConsentType.PHOTO_COLLECTION)
+            consent_service.check_consent(db, user_id, target_id, ConsentType.PHOTO_UPLOAD_CONSENT)
         if voice_count > 0:
-            consent_service.check_consent(db, user_id, target_id, ConsentType.VOICE_COLLECTION)
+            PersonaService._ensure_voice_profile_creation_allowed(db, user_id, target_id)
 
         profile = await ai_service.generate_persona_profile(
             target_name=target.name,

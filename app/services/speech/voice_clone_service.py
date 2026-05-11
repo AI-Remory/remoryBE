@@ -13,8 +13,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.settings import settings
-from app.models.consent import ConsentLog, ConsentType
+from app.models.consent import ConsentType
 from app.models.target_verification import TargetVerificationRequest, VerificationStatus
+from app.services.consent_service import consent_service
 from app.utils.exceptions import ForbiddenException
 
 
@@ -168,8 +169,8 @@ class OpenVoiceV2VoiceCloneService(VoiceCloneService):
 def ensure_voice_clone_allowed(db: Session, user_id: int, target_id: int) -> None:
     """Validate policy gates before creating a voice clone profile.
 
-    This is the service-layer checkpoint for the future API: voice cloning must
-    require target verification approval and explicit voice collection consent.
+    This is the service-layer checkpoint: voice cloning requires target
+    verification approval, voice upload consent, and voice cloning consent.
     """
 
     verification = db.execute(
@@ -182,16 +183,8 @@ def ensure_voice_clone_allowed(db: Session, user_id: int, target_id: int) -> Non
     if verification is None:
         raise ForbiddenException("Target verification approval is required before voice cloning.")
 
-    consent = db.execute(
-        select(ConsentLog).where(
-            ConsentLog.user_id == user_id,
-            ConsentLog.target_id == target_id,
-            ConsentLog.consent_type == ConsentType.VOICE_COLLECTION,
-            ConsentLog.is_consented == True,
-        )
-    ).scalar_one_or_none()
-    if consent is None:
-        raise ForbiddenException("Voice collection consent is required before voice cloning.")
+    consent_service.check_consent(db, user_id, target_id, ConsentType.VOICE_UPLOAD_CONSENT)
+    consent_service.check_consent(db, user_id, target_id, ConsentType.VOICE_CLONING_CONSENT)
 
 
 def _running_under_pytest() -> bool:

@@ -68,7 +68,7 @@ class ShareService:
         share_data: ShareLinkCreateRequest,
     ) -> dict:
         storybook = ShareService._get_owned_storybook(db, user_id, storybook_id)
-        consent_service.check_consent(db, user_id, None, ConsentType.STORYBOOK_SHARE)
+        consent_service.check_consent(db, user_id, None, ConsentType.STORYBOOK_SHARE_CONSENT)
         share_link = ShareLink(
             storybook_id=storybook_id,
             owner_id=user_id,

@@ -185,14 +185,14 @@ def target_media_consents(client, auth_headers, created_target):
             client,
             auth_headers,
             target_id,
-            "photo_collection",
+            "photo_upload_consent",
             details="photo upload consent",
         ),
         "voice": _create_consent(
             client,
             auth_headers,
             target_id,
-            "voice_collection",
+            "voice_upload_consent",
             details="voice upload consent",
         ),
     }
@@ -221,13 +221,30 @@ def uploaded_media(client, auth_headers, created_target, target_media_consents):
 
 @pytest.fixture
 def target_persona_consent(client, auth_headers, created_target, target_media_consents):
-    return _create_consent(
-        client,
-        auth_headers,
-        created_target["id"],
-        "persona_creation",
-        details="persona generation consent",
-    )
+    target_id = created_target["id"]
+    return {
+        "persona": _create_consent(
+            client,
+            auth_headers,
+            target_id,
+            "ai_persona_creation_consent",
+            details="persona generation consent",
+        ),
+        "ai_notice": _create_consent(
+            client,
+            auth_headers,
+            target_id,
+            "ai_response_notice_consent",
+            details="AI response notice consent",
+        ),
+        "voice_cloning": _create_consent(
+            client,
+            auth_headers,
+            target_id,
+            "voice_cloning_consent",
+            details="voice cloning consent",
+        ),
+    }
 
 
 @pytest.fixture
@@ -304,7 +321,7 @@ def storybook_share_consent(client, auth_headers, created_storybook):
         client,
         auth_headers,
         None,
-        "storybook_share",
+        "storybook_share_consent",
         details="storybook share consent",
     )
 

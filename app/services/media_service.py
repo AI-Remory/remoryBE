@@ -78,9 +78,9 @@ class MediaService:
         target_service.get_target_by_id(db, target_id, user_id)
 
         if media_type == MediaType.IMAGE:
-            consent_service.check_consent(db, user_id, target_id, ConsentType.PHOTO_COLLECTION)
+            consent_service.check_consent(db, user_id, target_id, ConsentType.PHOTO_UPLOAD_CONSENT)
         elif media_type == MediaType.VOICE:
-            consent_service.check_consent(db, user_id, target_id, ConsentType.VOICE_COLLECTION)
+            consent_service.check_consent(db, user_id, target_id, ConsentType.VOICE_UPLOAD_CONSENT)
 
         stored_filename, file_size, file_path = MediaService._save_file(target_id, media_type, upload_file)
         media = TargetMedia(

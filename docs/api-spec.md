@@ -1704,3 +1704,126 @@ Supported statuses:
 - `READY`
 - `FAILED`
 - `DISABLED`
+
+---
+
+## M. Granular Consent API
+
+Consent is stored as an append-only history with explicit revocation state.
+Frontend clients should use the latest record for the same `user_id + target_id + consent_type` as the current state.
+
+### Supported Consent Types
+
+Use these values in request JSON:
+
+- `target_profile_consent`
+- `photo_upload_consent`
+- `voice_upload_consent`
+- `voice_cloning_consent`
+- `ai_persona_creation_consent`
+- `ai_response_notice_consent`
+- `storybook_share_consent`
+- `group_share_consent`
+- `data_retention_consent`
+- `third_party_ai_processing_consent`
+
+Legacy values such as `photo_collection`, `voice_collection`, `persona_creation`, and `storybook_share` are still accepted for compatibility, but new frontend work should use the granular values above.
+
+### Create Consent
+
+- Method: `POST`
+- URL: `/api/v1/consents`
+- Auth: Yes
+- Description: Creates a new consent history row.
+
+Request:
+
+```json
+{
+  "target_id": 1,
+  "consent_type": "ai_persona_creation_consent",
+  "consent_version": "2026-05-12",
+  "consent_text_snapshot": "User agreed to AI persona creation for this target.",
+  "is_agreed": true
+}
+```
+
+Notes:
+
+- `target_id` is required for target-scoped consent types.
+- `target_id` must belong to the logged-in user.
+- Global consent types such as `storybook_share_consent`, `group_share_consent`, `data_retention_consent`, and `third_party_ai_processing_consent` may use `target_id=null`.
+- `is_consented` and `details` are legacy-compatible fields; prefer `is_agreed` and `consent_text_snapshot`.
+
+Response:
+
+```json
+{
+  "id": 1,
+  "user_id": 1,
+  "target_id": 1,
+  "consent_type": "ai_persona_creation_consent",
+  "consent_version": "2026-05-12",
+  "consent_text_snapshot": "User agreed to AI persona creation for this target.",
+  "is_agreed": true,
+  "agreed_at": "2026-05-12T00:00:00",
+  "revoked_at": null,
+  "ip_address": "127.0.0.1",
+  "user_agent": "Mozilla/5.0",
+  "is_consented": true,
+  "details": null,
+  "created_at": "2026-05-12T00:00:00",
+  "updated_at": "2026-05-12T00:00:00"
+}
+```
+
+### List My Consents
+
+- Method: `GET`
+- URL: `/api/v1/consents`
+- Auth: Yes
+- Description: Lists all consent records for the logged-in user, newest first.
+
+### List Target Consents
+
+- Method: `GET`
+- URL: `/api/v1/targets/{target_id}/consents`
+- Auth: Yes
+- Description: Lists all consent records for one owned target, newest first.
+
+### Revoke Consent
+
+- Method: `PATCH`
+- URL: `/api/v1/consents/{consent_id}/revoke`
+- Auth: Yes
+- Description: Revokes a consent record owned by the logged-in user.
+
+Response behavior:
+
+- `is_agreed=false`
+- `is_consented=false`
+- `revoked_at` is set
+
+### Consent Gates
+
+Persona creation now requires active latest consent for:
+
+- `ai_persona_creation_consent`
+- `ai_response_notice_consent`
+
+Media upload requires:
+
+- Image upload: `photo_upload_consent`
+- Voice upload: `voice_upload_consent`
+
+Voice profile / voice cloning requires:
+
+- `voice_upload_consent`
+- `voice_cloning_consent`
+
+Sharing requires:
+
+- Share link: `storybook_share_consent`
+- Group share: `group_share_consent`
+
+A revoked consent is not valid. If a newer record for the same target/type has `is_agreed=false`, backend policy checks fail with `403`.
