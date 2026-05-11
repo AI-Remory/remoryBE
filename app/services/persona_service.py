@@ -8,6 +8,7 @@ from app.models.persona import Persona, PersonaStatus, PersonaVoiceProfile
 from app.models.target import Target
 from app.services.ai_service import ai_service
 from app.services.consent_service import consent_service
+from app.services.verification_service import verification_service
 from app.models.consent import ConsentType
 from app.utils.exceptions import ForbiddenException, NotFoundException
 
@@ -74,6 +75,11 @@ class PersonaService:
     @staticmethod
     async def create_persona(db: Session, target_id: int, user_id: int) -> Persona:
         target = PersonaService._get_owned_target(db, target_id, user_id)
+
+        # Check target verification approval
+        verification = verification_service.get_approved_verification_for_target(db, target_id)
+        if verification is None:
+            raise ForbiddenException("Target verification approval is required before creating persona.")
 
         image_count = PersonaService._count_media(db, target_id, MediaType.IMAGE)
         voice_count = PersonaService._count_media(db, target_id, MediaType.VOICE)

@@ -35,4 +35,5 @@ class Target(BaseModel):
     media = relationship("TargetMedia", back_populates="target", cascade="all, delete-orphan")
     persona = relationship("Persona", back_populates="target", uselist=False, cascade="all, delete-orphan")
     consent_logs = relationship("ConsentLog", back_populates="target", cascade="all, delete-orphan")
+    verification_requests = relationship("TargetVerificationRequest", back_populates="target", cascade="all, delete-orphan")
 

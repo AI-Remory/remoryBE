@@ -1,6 +1,13 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String, Enum
 from sqlalchemy.orm import relationship
+import enum
 from app.models.base import BaseModel
+
+
+class UserRole(str, enum.Enum):
+    """사용자 역할"""
+    USER = "user"
+    ADMIN = "admin"
 
 
 class User(BaseModel):
@@ -11,6 +18,7 @@ class User(BaseModel):
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     nickname = Column(String(100), unique=True, nullable=False, index=True)
+    role = Column(Enum(UserRole), default=UserRole.USER, nullable=False)
 
     # 관계
     targets = relationship("Target", back_populates="user", cascade="all, delete-orphan")
@@ -23,3 +31,4 @@ class User(BaseModel):
     memory_groups = relationship("MemoryGroup", back_populates="owner", cascade="all, delete-orphan")
     consent_logs = relationship("ConsentLog", back_populates="user", cascade="all, delete-orphan")
     deletion_requests = relationship("DeletionRequest", back_populates="user", cascade="all, delete-orphan")
+    verification_requests = relationship("TargetVerificationRequest", back_populates="user", cascade="all, delete-orphan")

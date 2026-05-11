@@ -41,7 +41,7 @@ def _cleanup_uploads() -> None:
     if not uploads_root.exists():
         return
 
-    for relative_dir in ("images", "voices", "photo_memories"):
+    for relative_dir in ("images", "voices", "photo_memories", "verifications"):
         target_dir = uploads_root / relative_dir
         if not target_dir.exists():
             continue
@@ -126,6 +126,46 @@ def second_user_headers(second_user):
 
 
 @pytest.fixture
+def admin_user(client):
+    """관리자 사용자 생성"""
+    from app.models.user import User, UserRole
+    from app.core.security import hash_password
+
+    db = TestingSessionLocal()
+    try:
+        admin = User(
+            email="admin@example.com",
+            nickname="admin",
+            password_hash=hash_password("adminpassword123"),
+            role=UserRole.ADMIN,
+        )
+        db.add(admin)
+        db.commit()
+        db.refresh(admin)
+        return admin
+    finally:
+        db.close()
+
+
+@pytest.fixture
+def admin_token(client, admin_user):
+    """관리자 토큰"""
+    from app.core.security import create_access_token
+    from app.core.settings import settings
+
+    token = create_access_token(
+        subject=str(admin_user.id),
+        expires_delta=settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+    )
+    return token
+
+
+@pytest.fixture
+def admin_headers(admin_token):
+    return {"Authorization": f"Bearer {admin_token}"}
+
+
+@pytest.fixture
 def created_target(client, auth_headers):
     response = client.post(
         "/api/v1/targets",
@@ -190,7 +230,7 @@ def target_persona_consent(client, auth_headers, created_target, target_media_co
 
 
 @pytest.fixture
-def created_persona(client, auth_headers, created_target, uploaded_media, target_persona_consent):
+def created_persona(client, auth_headers, created_target, uploaded_media, target_persona_consent, target_verification):
     response = client.post(f"/api/v1/targets/{created_target['id']}/persona", headers=auth_headers)
     assert response.status_code == 201
     return response.json()
@@ -259,12 +299,47 @@ def created_storybook(client, auth_headers, created_interview):
 
 @pytest.fixture
 def storybook_share_consent(client, auth_headers, created_storybook):
-    return _create_consent(
-        client,
-        auth_headers,
-        None,
-        "storybook_share",
-        details="storybook share consent",
-    )
+     return _create_consent(
+         client,
+         auth_headers,
+         created_storybook["id"],
+         "storybook_share",
+         details="storybook share consent",
+     )
+
+
+@pytest.fixture
+def target_verification(client, auth_headers, created_target):
+    """Create an approved target verification for testing."""
+    from app.models.target_verification import TargetVerificationRequest, VerificationStatus, VerificationType
+    from datetime import datetime, UTC
+
+    db = TestingSessionLocal()
+    try:
+        # Get current user ID from token
+        user_response = client.get("/api/v1/auth/me", headers=auth_headers)
+        user_id = user_response.json()["id"]
+
+        verification = TargetVerificationRequest(
+            user_id=user_id,
+            target_id=created_target["id"],
+            verification_type=VerificationType.SELF_DECLARATION,
+            status=VerificationStatus.APPROVED,
+            document_file_path="test/verification.pdf",
+            original_filename="verification.pdf",
+            stored_filename="test_verification.pdf",
+            mime_type="application/pdf",
+            file_size=1024,
+            submitted_at=datetime.now(UTC).replace(tzinfo=None),
+            reviewed_at=datetime.now(UTC).replace(tzinfo=None),
+            reviewed_by=user_id,
+        )
+        db.add(verification)
+        db.commit()
+        db.refresh(verification)
+        return verification
+    finally:
+        db.close()
+
 
 

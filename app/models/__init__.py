@@ -1,6 +1,6 @@
 """SQLAlchemy 모델 모듈"""
 from app.models.base import Base, BaseModel
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.models.auth import RefreshToken
 from app.models.target import Target, TargetType
 from app.models.media import TargetMedia, MediaType
@@ -25,11 +25,13 @@ from app.models.storybook import (
 from app.models.sharing import GroupMember, GroupMemberRole, GroupStoryBook, MemoryGroup, ShareLink, SharePermission
 from app.models.consent import ConsentLog, ConsentType
 from app.models.deletion import DeletionItemType, DeletionRequest, DeletionStatus, DeletionTargetType
+from app.models.target_verification import TargetVerificationRequest, VerificationType, VerificationStatus
 
 __all__ = [
     "Base",
     "BaseModel",
     "User",
+    "UserRole",
     "RefreshToken",
     "Target",
     "TargetType",
@@ -66,4 +68,7 @@ __all__ = [
     "DeletionItemType",
     "DeletionTargetType",
     "DeletionStatus",
+    "TargetVerificationRequest",
+    "VerificationType",
+    "VerificationStatus",
 ]
