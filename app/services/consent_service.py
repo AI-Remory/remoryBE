@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.consent import ConsentLog, ConsentType
+from app.models.audit_log import AuditAction, AuditTargetType
 from app.services.target_service import target_service
 from app.utils.exceptions import ForbiddenException, NotFoundException, ValidationException
 
@@ -114,6 +115,23 @@ class ConsentService:
         db.add(consent)
         db.commit()
         db.refresh(consent)
+
+        # Create audit log
+        try:
+            from app.services.audit_log_service import AuditLogService
+            AuditLogService.create_audit_log(
+                db=db,
+                action=AuditAction.CONSENT_CREATED,
+                actor_user_id=user_id,
+                target_type=AuditTargetType.CONSENT,
+                target_id=consent.id,
+                description=f"Consent created for {consent_type.value}",
+                metadata={"consent_type": consent_type.value, "consent_id": consent.id},
+            )
+        except Exception:
+            # Don't let audit log creation failures break the main flow
+            pass
+
         return consent
 
     @staticmethod
@@ -146,6 +164,23 @@ class ConsentService:
         consent.revoked_at = ConsentService._now()
         db.commit()
         db.refresh(consent)
+
+        # Create audit log
+        try:
+            from app.services.audit_log_service import AuditLogService
+            AuditLogService.create_audit_log(
+                db=db,
+                action=AuditAction.CONSENT_REVOKED,
+                actor_user_id=user_id,
+                target_type=AuditTargetType.CONSENT,
+                target_id=consent.id,
+                description=f"Consent revoked for {consent.consent_type.value}",
+                metadata={"consent_type": consent.consent_type.value, "consent_id": consent.id},
+            )
+        except Exception:
+            # Don't let audit log creation failures break the main flow
+            pass
+
         return consent
 
     @classmethod

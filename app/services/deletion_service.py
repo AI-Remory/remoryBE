@@ -3,10 +3,12 @@
 import os
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.audit_log import AuditAction, AuditTargetType
 from app.models.chat import PersonaChat, PersonaMessage
 from app.models.deletion import DeletionRequest, DeletionStatus, DeletionTargetType
 from app.models.interview import PhotoMemory
@@ -64,6 +66,22 @@ class DeletionService:
         db.commit()
         db.refresh(deletion_request)
 
+        # Create audit log for deletion request creation
+        try:
+            from app.services.audit_log_service import AuditLogService
+            AuditLogService.create_audit_log(
+                db=db,
+                action=AuditAction.DELETION_REQUESTED,
+                actor_user_id=user_id,
+                target_type=AuditTargetType.DELETION_REQUEST,
+                target_id=deletion_request.id,
+                description=f"Deletion request created for {request_data.target_type.value}",
+                metadata={"target_type": request_data.target_type.value, "target_id": request_data.target_id, "deletion_request_id": deletion_request.id},
+            )
+        except Exception:
+            # Don't let audit log creation failures break the main flow
+            pass
+
         request_id = deletion_request.id
         try:
             DeletionService._process_deletion(
@@ -78,6 +96,22 @@ class DeletionService:
             deletion_request.error_message = None
             db.commit()
             db.refresh(deletion_request)
+
+            # Create audit log for completion
+            try:
+                from app.services.audit_log_service import AuditLogService
+                AuditLogService.create_audit_log(
+                    db=db,
+                    action=AuditAction.DELETION_COMPLETED,
+                    actor_user_id=None,  # System action
+                    target_type=AuditTargetType.DELETION_REQUEST,
+                    target_id=deletion_request.id,
+                    description=f"Deletion completed for {request_data.target_type.value}",
+                    metadata={"target_type": request_data.target_type.value, "target_id": request_data.target_id},
+                )
+            except Exception:
+                pass
+
             return deletion_request
         except Exception as exc:
             db.rollback()
@@ -87,6 +121,10 @@ class DeletionService:
             deletion_request.error_message = str(exc)
             db.commit()
             db.refresh(deletion_request)
+
+            # Note: Audit log for failure is not created to avoid infinite loops
+            # if audit log creation itself is failing
+
             return deletion_request
 
     @staticmethod
@@ -258,6 +296,156 @@ class DeletionService:
             pass
 
         db.flush()
+
+    @staticmethod
+    def list_deletion_requests_admin(
+        db: Session,
+        status: Optional[DeletionStatus] = None,
+    ) -> list[DeletionRequest]:
+        """List all deletion requests (admin view)."""
+        query = select(DeletionRequest)
+        if status:
+            query = query.where(DeletionRequest.status == status)
+        query = query.order_by(DeletionRequest.created_at.desc(), DeletionRequest.id.desc())
+        return db.execute(query).scalars().all()
+
+    @staticmethod
+    def get_deletion_request_admin(db: Session, request_id: int) -> DeletionRequest:
+        """Get a deletion request by ID (admin view)."""
+        deletion_request = db.execute(
+            select(DeletionRequest).where(DeletionRequest.id == request_id)
+        ).scalar_one_or_none()
+        if not deletion_request:
+            raise NotFoundException("DeletionRequest", request_id)
+        return deletion_request
+
+    @staticmethod
+    def process_deletion_request(
+        db: Session,
+        admin_user_id: int,
+        request_id: int,
+        admin_note: Optional[str] = None,
+    ) -> DeletionRequest:
+        """Admin approves and processes a deletion request."""
+        deletion_request = DeletionService.get_deletion_request_admin(db, request_id)
+
+        if deletion_request.status != DeletionStatus.PENDING:
+            raise ForbiddenException("Deletion request is not PENDING and cannot be processed")
+
+        deletion_request.status = DeletionStatus.PROCESSING
+        deletion_request.processed_by = admin_user_id
+        deletion_request.admin_note = admin_note
+        db.commit()
+
+        # Try to process the deletion
+        try:
+            DeletionService._process_deletion(
+                db=db,
+                user_id=deletion_request.user_id,
+                target_type=deletion_request.target_type,
+                target_id=deletion_request.target_id,
+            )
+            deletion_request.status = DeletionStatus.COMPLETED
+            deletion_request.processed_at = DeletionService._now()
+            deletion_request.error_message = None
+            db.commit()
+            db.refresh(deletion_request)
+
+            # Create audit log for completion
+            try:
+                from app.services.audit_log_service import AuditLogService
+                AuditLogService.create_audit_log(
+                    db=db,
+                    action=AuditAction.DELETION_COMPLETED,
+                    actor_user_id=admin_user_id,
+                    target_type=AuditTargetType.DELETION_REQUEST,
+                    target_id=deletion_request.id,
+                    description=f"Deletion approved and processed for {deletion_request.target_type.value}",
+                    metadata={"target_type": deletion_request.target_type.value, "deletion_request_id": request_id},
+                )
+            except Exception:
+                pass
+
+            return deletion_request
+        except Exception as exc:
+            db.rollback()
+            deletion_request = db.get(DeletionRequest, request_id)
+            deletion_request.status = DeletionStatus.FAILED
+            deletion_request.processed_at = DeletionService._now()
+            deletion_request.error_message = str(exc)
+            db.commit()
+            db.refresh(deletion_request)
+            return deletion_request
+
+    @staticmethod
+    def reject_deletion_request(
+        db: Session,
+        admin_user_id: int,
+        request_id: int,
+        admin_note: Optional[str] = None,
+    ) -> DeletionRequest:
+        """Admin rejects a deletion request."""
+        deletion_request = DeletionService.get_deletion_request_admin(db, request_id)
+
+        if deletion_request.status != DeletionStatus.PENDING:
+            raise ForbiddenException("Deletion request is not PENDING and cannot be rejected")
+
+        deletion_request.status = DeletionStatus.REJECTED
+        deletion_request.processed_by = admin_user_id
+        deletion_request.processed_at = DeletionService._now()
+        deletion_request.admin_note = admin_note
+        db.commit()
+        db.refresh(deletion_request)
+
+        # Create audit log
+        try:
+            from app.services.audit_log_service import AuditLogService
+            AuditLogService.create_audit_log(
+                db=db,
+                action=AuditAction.DELETION_REJECTED,
+                actor_user_id=admin_user_id,
+                target_type=AuditTargetType.DELETION_REQUEST,
+                target_id=deletion_request.id,
+                description=f"Deletion request rejected for {deletion_request.target_type.value}",
+                metadata={"target_type": deletion_request.target_type.value, "deletion_request_id": request_id},
+            )
+        except Exception:
+            pass
+
+        return deletion_request
+
+    @staticmethod
+    def cancel_deletion_request(
+        db: Session,
+        user_id: int,
+        request_id: int,
+    ) -> DeletionRequest:
+        """User cancels a pending deletion request."""
+        deletion_request = DeletionService.get_deletion_request(db, user_id, request_id)
+
+        if deletion_request.status != DeletionStatus.PENDING:
+            raise ForbiddenException("Only PENDING deletion requests can be cancelled")
+
+        deletion_request.status = DeletionStatus.CANCELLED
+        db.commit()
+        db.refresh(deletion_request)
+
+        # Create audit log
+        try:
+            from app.services.audit_log_service import AuditLogService
+            AuditLogService.create_audit_log(
+                db=db,
+                action=AuditAction.DELETION_REJECTED,  # Reuse REJECTED action for cancellation
+                actor_user_id=user_id,
+                target_type=AuditTargetType.DELETION_REQUEST,
+                target_id=deletion_request.id,
+                description=f"Deletion request cancelled for {deletion_request.target_type.value}",
+                metadata={"target_type": deletion_request.target_type.value, "deletion_request_id": request_id},
+            )
+        except Exception:
+            pass
+
+        return deletion_request
 
 
 deletion_service = DeletionService()

@@ -1,12 +1,15 @@
 """Admin APIs."""
 
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status as http_status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.deps import get_admin_user
+from app.models.audit_log import AuditAction, AuditTargetType
 from app.models.user import User
+from app.schemas.audit_log import AuditLogResponse
 from app.schemas.common import PaginatedResponse
 from app.schemas.deletion import DeletionRequestResponse
 from app.schemas.target_verification import (
@@ -16,6 +19,7 @@ from app.schemas.target_verification import (
     VerificationRequestRejectRequest,
     VerificationRequestRevokeRequest,
 )
+from app.services.audit_log_service import AuditLogService
 from app.services.deletion_service import deletion_service
 from app.services.verification_service import verification_service
 from app.utils.exceptions import RemoryException, to_http_exception
@@ -261,4 +265,79 @@ async def reject_deletion_request(
         )
     except RemoryException as e:
         raise to_http_exception(e)
+
+
+@router.get("/audit-logs", response_model=PaginatedResponse[AuditLogResponse])
+async def list_audit_logs(
+    action: str | None = Query(default=None),
+    actor_user_id: int | None = Query(default=None),
+    target_type: str | None = Query(default=None),
+    target_id: int | None = Query(default=None),
+    start_date: datetime | None = Query(default=None),
+    end_date: datetime | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=20, ge=1, le=100),
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """List audit logs (admin only).
+
+    Query parameters:
+    - action: AuditAction enum value
+    - actor_user_id: Filter by user who performed action
+    - target_type: AuditTargetType enum value
+    - target_id: Filter by target ID
+    - start_date: ISO format datetime (e.g., 2026-05-12T10:00:00)
+    - end_date: ISO format datetime (e.g., 2026-05-12T20:00:00)
+    - page: Page number (1-indexed)
+    - size: Page size (1-100)
+    """
+    try:
+        # Parse action enum
+        parsed_action = None
+        if action:
+            try:
+                parsed_action = AuditAction[action]
+            except KeyError:
+                raise HTTPException(
+                    status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Invalid action value: {action}",
+                )
+
+        # Parse target_type enum
+        parsed_target_type = None
+        if target_type:
+            try:
+                parsed_target_type = AuditTargetType[target_type]
+            except KeyError:
+                raise HTTPException(
+                    status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Invalid target_type value: {target_type}",
+                )
+
+        result = AuditLogService.list_audit_logs(
+            db,
+            page=page,
+            size=size,
+            action=parsed_action,
+            actor_user_id=actor_user_id,
+            target_type=parsed_target_type,
+            target_id=target_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        return PaginatedResponse(
+            total=result["total"],
+            skip=(page - 1) * size,
+            limit=size,
+            items=result["items"],
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
 

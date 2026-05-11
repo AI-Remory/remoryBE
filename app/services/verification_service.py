@@ -9,6 +9,7 @@ from fastapi import UploadFile
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.models.audit_log import AuditAction, AuditTargetType
 from app.models.target import Target
 from app.models.target_verification import TargetVerificationRequest, VerificationStatus, VerificationType
 from app.utils.constants import MAX_UPLOAD_SIZE, UPLOAD_DIR
@@ -204,8 +205,38 @@ class VerificationService:
         admin_user_id: int,
         action: str,
     ) -> None:
-        # TODO: Persist AuditLog entry here when an AuditLog model/service is added.
-        return None
+        """Record an audit log for verification admin decision.
+
+        Args:
+            db: Database session
+            request: The verification request
+            admin_user_id: Admin user ID
+            action: The action taken (approve, reject, need_more_info, revoke)
+        """
+        try:
+            from app.services.audit_log_service import AuditLogService
+
+            action_map = {
+                "approve": AuditAction.VERIFICATION_APPROVED,
+                "reject": AuditAction.VERIFICATION_REJECTED,
+                "need_more_info": AuditAction.VERIFICATION_NEED_MORE_INFO,
+                "revoke": AuditAction.VERIFICATION_REVOKED,
+            }
+
+            audit_action = action_map.get(action, AuditAction.VERIFICATION_APPROVED)
+
+            AuditLogService.create_audit_log(
+                db=db,
+                action=audit_action,
+                actor_user_id=admin_user_id,
+                target_type=AuditTargetType.VERIFICATION_REQUEST,
+                target_id=request.id,
+                description=f"Verification request {action} - Target: {request.target_id}",
+                metadata={"verification_type": request.verification_type.value, "request_id": request.id},
+            )
+        except Exception:
+            # Don't let audit log creation failures break the main flow
+            pass
 
     @staticmethod
     def approve_verification_request(

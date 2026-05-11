@@ -94,7 +94,9 @@ Note: verification API JSON responses never expose internal verification file pa
 | `verification.status` | `PENDING`, `NEED_MORE_INFO`, `APPROVED`, `REJECTED`, `EXPIRED`, `REVOKED` |
 | `verification.verification_type` | `FAMILY_RELATION_CERTIFICATE`, `ID_CARD`, `SELF_DECLARATION`, `OTHER` |
 | `deletion.target_type` | `TARGET`, `TARGET_MEDIA`, `PERSONA`, `PERSONA_CHAT`, `PERSONA_MESSAGE`, `PHOTO_MEMORY`, `STORYBOOK`, `SHARE_LINK`, `MEMORY_GROUP`, `ACCOUNT`, `VERIFICATION_REQUEST` |
-| `deletion.status` | `REQUESTED`, `COMPLETED`, `FAILED` |
+| `deletion.status` | `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED` |
+| `audit_log.action` | `USER_SIGNUP`, `TARGET_CREATED`, `TARGET_UPDATED`, `TARGET_DELETED`, `CONSENT_CREATED`, `CONSENT_REVOKED`, `VERIFICATION_SUBMITTED`, `VERIFICATION_APPROVED`, `VERIFICATION_REJECTED`, `VERIFICATION_NEED_MORE_INFO`, `VERIFICATION_REVOKED`, `PERSONA_CREATED`, `PERSONA_CHAT_CREATED`, `PERSONA_MESSAGE_CREATED`, `VOICE_PROFILE_CREATED`, `VOICE_PROFILE_REVIEWED`, `VOICE_SYNTHESIZED`, `VOICE_CALL_STARTED`, `VOICE_CALL_ENDED`, `DELETION_REQUESTED`, `DELETION_COMPLETED`, `DELETION_REJECTED`, `REPORT_CREATED`, `REPORT_RESOLVED`, `RATE_LIMIT_BLOCKED`, `ABNORMAL_REQUEST_BLOCKED` |
+| `audit_log.target_type` | `TARGET`, `CONSENT`, `VERIFICATION_REQUEST`, `PERSONA`, `PERSONA_CHAT`, `PERSONA_MESSAGE`, `VOICE_PROFILE`, `DELETION_REQUEST`, `REPORT`, `USER`, `SYSTEM` |
 
 ## A. Auth
 
@@ -1872,3 +1874,138 @@ Sharing requires:
 - Group share: `group_share_consent`
 
 A revoked consent is not valid. If a newer record for the same target/type has `is_agreed=false`, backend policy checks fail with `403`.
+
+## T. Audit Log (Admin Only)
+
+감사 로그는 모든 민감한 작업을 추적하여 운영 투명성과 보안을 확보한다.
+
+### Overview
+
+- 감사 로그는 다음 작업을 기록한다:
+  - **사용자 행동**: 회원가입, 전화/취소
+  - **조직/목표**: 생성, 수정, 삭제
+  - **동의**: 생성, 철회
+  - **검증**: 제출, 승인, 거절, 추가정보요청, 철회
+  - **페르소나**: 생성, 대화 시작, 메시지 저장, 음성 프로필 생성
+  - **삭제**: 요청, 완료, 거절
+  - **시스템**: 속도 제한, 비정상 요청 차단
+
+- **보안**: 감사 로그는 자동으로 민감한 정보를 제거한다:
+  - 암호, 토큰, API 키, 비밀 저장 금지
+  - 메타데이터에 파일 전체 경로 대신 식별 ID만 저장
+  - 개인정보 최소화 원칙
+
+### Model Fields
+
+```
+{
+  "id": 123,
+  "actor_user_id": 1,                  # 작업 수행자 (null = 시스템)
+  "action": "TARGET_CREATED",           # AuditAction enum
+  "target_type": "TARGET",              # AuditTargetType enum
+  "target_id": 5,                       # 대상 리소스 ID (nullable)
+  "description": "Target created",      # 작업 설명
+  "metadata_json": "{...}",             # 추가 정보 (JSON, 민감 정보 제거됨)
+  "ip_address": "127.0.0.1",            # 요청 IP
+  "user_agent": "Mozilla/5.0",          # 요청 사용자 에이전트
+  "created_at": "2026-05-12T10:00:00"   # ISO 8601
+}
+```
+
+### List Audit Logs (Admin)
+
+- Method: `GET`
+- URL: `/api/v1/admin/audit-logs`
+- Auth: Yes (Admin only)
+- Description: 모든 감사 로그를 조회한다. 관리자만 접근 가능.
+
+Query parameters:
+
+- `action` (optional): `AuditAction` enum 값으로 필터링
+  - 예: `?action=DELETION_REQUESTED`
+- `actor_user_id` (optional): 작업 수행자 ID로 필터링
+  - 예: `?actor_user_id=1`
+- `target_type` (optional): `AuditTargetType` enum 값으로 필터링
+  - 예: `?target_type=VERIFICATION_REQUEST`
+- `target_id` (optional): 대상 리소스 ID로 필터링
+  - 예: `?target_id=123`
+- `start_date` (optional): ISO 8601 datetime (inclusive)
+  - 예: `?start_date=2026-05-01T00:00:00`
+- `end_date` (optional): ISO 8601 datetime (inclusive)
+  - 예: `?end_date=2026-05-31T23:59:59`
+- `page` (optional, default=1): 페이지 번호 (1-indexed)
+- `size` (optional, default=20): 페이지 크기 (1-100)
+
+Response:
+
+```json
+{
+  "total": 150,
+  "skip": 0,
+  "limit": 20,
+  "items": [
+    {
+      "id": 123,
+      "actor_user_id": 1,
+      "action": "DELETION_REQUESTED",
+      "target_type": "TARGET",
+      "target_id": 5,
+      "description": "Deletion request created for TARGET",
+      "metadata_json": "{\"target_type\": \"TARGET\", \"target_id\": 5, \"deletion_request_id\": 10}",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Mozilla/5.0",
+      "created_at": "2026-05-12T10:00:00"
+    }
+  ]
+}
+```
+
+### Recorded Actions
+
+다음 작업들이 자동으로 감사 로그에 기록된다:
+
+#### User Actions
+
+- `USER_SIGNUP`: 새 사용자 가입
+
+#### Target Management
+
+- `TARGET_CREATED`: 공감 대상 생성
+- `TARGET_UPDATED`: 공감 대상 정보 수정
+- `TARGET_DELETED`: 공감 대상 삭제
+
+#### Consent
+
+- `CONSENT_CREATED`: 사용자가 동의서에 서명
+- `CONSENT_REVOKED`: 사용자가 동의서 철회
+
+#### Verification (Admin Actions)
+
+- `VERIFICATION_SUBMITTED`: 사용자가 검증 요청 제출
+- `VERIFICATION_APPROVED`: 관리자가 검증 요청 승인
+- `VERIFICATION_REJECTED`: 관리자가 검증 요청 거절
+- `VERIFICATION_NEED_MORE_INFO`: 관리자가 추가 정보 요청
+- `VERIFICATION_REVOKED`: 관리자가 승인된 검증 철회
+
+#### Persona & Voice
+
+- `PERSONA_CREATED`: 페르소나 생성
+- `PERSONA_CHAT_CREATED`: 페르소나와의 대화 시작
+- `PERSONA_MESSAGE_CREATED`: 대화 메시지 저장
+- `VOICE_PROFILE_CREATED`: 음성 프로필 생성
+- `VOICE_PROFILE_REVIEWED`: 음성 프로필 품질 평가
+- `VOICE_SYNTHESIZED`: 음성 합성 실행
+- `VOICE_CALL_STARTED`: 음성 통화 시작
+- `VOICE_CALL_ENDED`: 음성 통화 종료
+
+#### Deletion Requests
+
+- `DELETION_REQUESTED`: 사용자가 삭제 요청 생성 또는 시스템이 자동 처리 시작
+- `DELETION_COMPLETED`: 삭제 요청이 완료됨
+- `DELETION_REJECTED`: 관리자가 삭제 요청 거절
+
+#### System Actions
+
+- `RATE_LIMIT_BLOCKED`: API 속도 제한으로 요청 차단
+- `ABNORMAL_REQUEST_BLOCKED`: 비정상 요청 감지로 차단
+
