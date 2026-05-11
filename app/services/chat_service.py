@@ -93,6 +93,30 @@ class ChatService:
         }
 
     @staticmethod
+    def _recent_messages(db: Session, chat_id: int, limit: int = 10) -> list[dict]:
+        messages = (
+            db.execute(
+                select(PersonaMessage)
+                .where(
+                    PersonaMessage.chat_id == chat_id,
+                    PersonaMessage.deleted_at.is_(None),
+                )
+                .order_by(PersonaMessage.created_at.desc(), PersonaMessage.id.desc())
+                .limit(limit)
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            {
+                "sender_type": message.sender_type.value,
+                "message_type": message.message_type.value,
+                "content": message.content or "",
+            }
+            for message in reversed(messages)
+        ]
+
+    @staticmethod
     def _validate_message_request(message_data: PersonaMessageCreateRequest) -> None:
         if message_data.message_type == MessageType.TEXT and not message_data.content:
             raise ValidationException("Text messages require content")
@@ -113,6 +137,7 @@ class ChatService:
         if persona.status != PersonaStatus.READY:
             raise ValidationException("Persona is not ready")
 
+        recent_messages = ChatService._recent_messages(db, chat_id)
         user_message = PersonaMessage(
             chat_id=chat_id,
             sender_type=SenderType.USER,
@@ -126,7 +151,7 @@ class ChatService:
 
         reply_content = await get_llm_service().generate_persona_reply(
             persona=ChatService._build_persona_profile(persona),
-            recent_messages=[],
+            recent_messages=recent_messages,
             user_message=message_data.content or "",
         )
         persona_message = PersonaMessage(
