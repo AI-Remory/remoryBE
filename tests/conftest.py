@@ -130,6 +130,16 @@ def admin_user(client):
     """관리자 사용자 생성"""
     from app.models.user import User, UserRole
     from app.core.security import hash_password
+    from app.core.security import create_access_token
+    from app.core.settings import settings
+    from datetime import timedelta
+
+    class AttrDict(dict):
+        def __getattr__(self, item):
+            try:
+                return self[item]
+            except KeyError as exc:
+                raise AttributeError(item) from exc
 
     db = TestingSessionLocal()
     try:
@@ -142,7 +152,20 @@ def admin_user(client):
         db.add(admin)
         db.commit()
         db.refresh(admin)
-        return admin
+
+        token = create_access_token(
+            data={"sub": str(admin.id)},
+            expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+        )
+
+        return AttrDict({
+            "id": admin.id,
+            "user_id": admin.id,
+            "access_token": token,
+            "email": admin.email,
+            "nickname": admin.nickname,
+            "role": admin.role,
+        })
     finally:
         db.close()
 
@@ -155,7 +178,7 @@ def admin_token(client, admin_user):
     from datetime import timedelta
 
     token = create_access_token(
-        data={"sub": str(admin_user.id)},
+        data={"sub": str(admin_user['id'])},
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
     )
     return token
@@ -359,4 +382,121 @@ def target_verification(client, auth_headers, created_target):
         db.close()
 
 
+@pytest.fixture
+def authorized_user(client):
+    """Create a user with access token."""
+    data = {
+        "email": "authorized@example.com",
+        "nickname": "authorized",
+        "password": "securepassword123",
+    }
+    response = client.post("/api/v1/auth/register", json=data)
+    assert response.status_code == 201
+    user_data = response.json()
+    user_data['user_id'] = user_data['user']['id']
+    return user_data
 
+
+@pytest.fixture
+def other_authorized_user(client):
+    """Create another user with access token."""
+    data = {
+        "email": "other@example.com",
+        "nickname": "other",
+        "password": "securepassword123",
+    }
+    response = client.post("/api/v1/auth/register", json=data)
+    assert response.status_code == 201
+    user_data = response.json()
+    user_data['user_id'] = user_data['user']['id']
+    return user_data
+
+
+@pytest.fixture
+def target_with_persona(client, authorized_user):
+    """Create a target with persona for testing."""
+    from app.models.target import Target
+    from app.models.persona import Persona
+    from app.models.target_verification import TargetVerificationRequest, VerificationStatus, VerificationType
+    from datetime import datetime, UTC
+
+    db = TestingSessionLocal()
+    try:
+        user_id = authorized_user['user_id']
+
+        # Create target
+        target = Target(
+            user_id=user_id,
+            name="Test Target",
+            description="A test target",
+            target_type="parent"
+        )
+        db.add(target)
+        db.flush()
+
+        # Create verification
+        verification = TargetVerificationRequest(
+            user_id=user_id,
+            target_id=target.id,
+            verification_type=VerificationType.SELF_DECLARATION,
+            status=VerificationStatus.APPROVED,
+            submitted_file_path="uploads/verifications/test/verification.pdf",
+            original_filename="verification.pdf",
+            mime_type="application/pdf",
+            file_size=1024,
+            submitted_at=datetime.now(UTC).replace(tzinfo=None),
+            reviewed_at=datetime.now(UTC).replace(tzinfo=None),
+            reviewed_by=user_id,
+        )
+        db.add(verification)
+        db.flush()
+
+        # Create persona
+        persona = Persona(
+            target_id=target.id,
+            persona_name="Test Persona",
+            personality_summary="Test summary"
+        )
+        db.add(persona)
+        db.commit()
+        db.refresh(target)
+        db.refresh(persona)
+
+        return target, persona
+    finally:
+        db.close()
+
+
+@pytest.fixture
+def storybook(client, authorized_user):
+    """Create a storybook for testing."""
+    from app.models.storybook import StoryBook, StoryBookSourceType, StoryBookStatus, StoryBookVisibility
+
+    db = TestingSessionLocal()
+    try:
+        user_id = authorized_user['user_id']
+
+        storybook = StoryBook(
+            user_id=user_id,
+            title="Test Storybook",
+            source_type=StoryBookSourceType.SELF_STORY,
+            status=StoryBookStatus.GENERATED,
+            visibility=StoryBookVisibility.PRIVATE
+        )
+        db.add(storybook)
+        db.commit()
+        db.refresh(storybook)
+
+        return storybook
+    finally:
+        db.close()
+
+
+@pytest.fixture(scope="function")
+def db():
+    """创建测试数据库会话"""
+    db_session = TestingSessionLocal()
+    try:
+        yield db_session
+    finally:
+        db_session.close()

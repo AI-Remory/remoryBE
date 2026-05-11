@@ -503,3 +503,144 @@ async def list_rate_limit_events(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(exc),
         ) from exc
+
+
+# ============================================================================
+# Report Management Endpoints
+# ============================================================================
+
+
+@router.get("/reports", response_model=PaginatedResponse)
+async def list_reports(
+    status: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=20, ge=1, le=100),
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """List all reports (admin only)."""
+    try:
+        from app.models.report import ReportStatus
+        from app.schemas.report import AdminReportListResponse
+        from app.services.report_service import report_service
+
+        status_filter = None
+        if status is not None:
+            try:
+                status_filter = ReportStatus(status)
+            except (KeyError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Invalid status value",
+                ) from exc
+
+        result = report_service.get_admin_reports(db, status_filter, page, size)
+        return PaginatedResponse(
+            total=result["total"],
+            skip=(page - 1) * size,
+            limit=size,
+            items=result["items"],
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/reports/{report_id}")
+async def get_report(
+    report_id: int,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Get a specific report (admin only)."""
+    try:
+        from app.services.report_service import report_service
+
+        return report_service.get_admin_report(db, report_id)
+    except RemoryException as e:
+        raise to_http_exception(e)
+
+
+@router.patch("/reports/{report_id}/reviewing")
+async def update_report_reviewing(
+    report_id: int,
+    request_data: dict | None = None,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Mark report as under review (admin only)."""
+    try:
+        from app.services.report_service import report_service
+
+        admin_note = None
+        if request_data and isinstance(request_data, dict):
+            admin_note = request_data.get("admin_note")
+
+        return report_service.update_report_reviewing(db, admin_user.id, report_id, admin_note)
+    except RemoryException as e:
+        raise to_http_exception(e)
+
+
+@router.patch("/reports/{report_id}/resolve")
+async def resolve_report(
+    report_id: int,
+    request_data: dict | None = None,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Resolve report without taking action (admin only)."""
+    try:
+        from app.services.report_service import report_service
+
+        admin_note = None
+        if request_data and isinstance(request_data, dict):
+            admin_note = request_data.get("admin_note")
+
+        return report_service.resolve_report(db, admin_user.id, report_id, admin_note)
+    except RemoryException as e:
+        raise to_http_exception(e)
+
+
+@router.patch("/reports/{report_id}/reject")
+async def reject_report(
+    report_id: int,
+    request_data: dict | None = None,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Reject report (admin only)."""
+    try:
+        from app.services.report_service import report_service
+
+        admin_note = None
+        if request_data and isinstance(request_data, dict):
+            admin_note = request_data.get("admin_note")
+
+        return report_service.reject_report(db, admin_user.id, report_id, admin_note)
+    except RemoryException as e:
+        raise to_http_exception(e)
+
+
+@router.patch("/reports/{report_id}/action-taken")
+async def take_action_on_report(
+    report_id: int,
+    request_data: dict | None = None,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Take action on report - disable the reported content (admin only)."""
+    try:
+        from app.services.report_service import report_service
+
+        admin_note = None
+        if request_data and isinstance(request_data, dict):
+            admin_note = request_data.get("admin_note")
+
+        return report_service.take_action_on_report(db, admin_user.id, report_id, admin_note)
+    except RemoryException as e:
+        raise to_http_exception(e)
+

@@ -51,5 +51,7 @@ class PersonaMessage(Base):
     is_ai_generated = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     deleted_at = Column(DateTime, nullable=True)
+    hidden_at = Column(DateTime, nullable=True)
+    hidden_reason = Column(String(255), nullable=True)
 
     chat = relationship("PersonaChat", back_populates="messages")

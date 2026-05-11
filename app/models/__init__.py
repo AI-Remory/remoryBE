@@ -28,6 +28,7 @@ from app.models.deletion import DeletionItemType, DeletionRequest, DeletionStatu
 from app.models.target_verification import TargetVerificationRequest, VerificationType, VerificationStatus
 from app.models.usage_limit import UsageLimit, PersonaUsageLimit, RateLimitEvent
 from app.models.audit_log import AuditLog
+from app.models.report import Report, ReportTargetType, ReportReasonType, ReportStatus
 
 __all__ = [
     "Base",
@@ -78,6 +79,10 @@ __all__ = [
     "PersonaUsageLimit",
     "RateLimitEvent",
     "AuditLog",
+    "Report",
+    "ReportTargetType",
+    "ReportReasonType",
+    "ReportStatus",
 ]
 
 

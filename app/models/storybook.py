@@ -46,6 +46,7 @@ class StoryBook(BaseModel):
     status = Column(Enum(StoryBookStatus), default=StoryBookStatus.DRAFT, nullable=False)
     visibility = Column(Enum(StoryBookVisibility), default=StoryBookVisibility.PRIVATE, nullable=False)
     deleted_at = Column(DateTime, nullable=True)
+    disabled_at = Column(DateTime, nullable=True)
 
     user = relationship("User", back_populates="storybooks")
     photo_memory = relationship("PhotoMemory")

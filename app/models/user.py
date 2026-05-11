@@ -36,3 +36,4 @@ class User(BaseModel):
         foreign_keys="TargetVerificationRequest.user_id",
         cascade="all, delete-orphan",
     )
+    reports = relationship("Report", back_populates="reporter", foreign_keys="Report.reporter_user_id", cascade="all, delete-orphan")

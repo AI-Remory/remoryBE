@@ -42,6 +42,12 @@ class FileUploadException(RemoryException):
         super().__init__(message, "FILE_UPLOAD_ERROR")
 
 
+class BadRequestException(RemoryException):
+    """잘못된 요청"""
+    def __init__(self, message: str = "Bad request"):
+        super().__init__(message, "BAD_REQUEST")
+
+
 def to_http_exception(exc: RemoryException, status_code: int = None):
     """RemoryException을 HTTPException으로 변환"""
     if status_code is None:

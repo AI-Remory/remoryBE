@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Boolean, Column, Enum, Float, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Enum, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import relationship
 
 from app.models.base import BaseModel
@@ -43,6 +43,8 @@ class Persona(BaseModel):
     is_voice_profile_created = Column(Boolean, default=False)
     is_consent_required = Column(Boolean, default=True)
     is_deleted = Column(Boolean, default=False, nullable=False)
+    disabled_at = Column(DateTime, nullable=True)
+    disabled_reason = Column(String(255), nullable=True)
 
     target = relationship("Target", back_populates="persona")
     voice_profile = relationship(
