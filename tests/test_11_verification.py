@@ -54,11 +54,12 @@ def test_create_verification_request_own_target(client, auth_headers, created_ta
     data = response.json()
     assert data["user_id"] == created_target["user_id"]
     assert data["target_id"] == created_target["id"]
-    assert data["verification_type"] == "family_relation_certificate"
-    assert data["status"] == "pending"
+    assert data["verification_type"] == "FAMILY_RELATION_CERTIFICATE"
+    assert data["status"] == "PENDING"
     assert data["original_filename"] == "cert.pdf"
     assert data["mime_type"] == "application/pdf"
     # 내부 저장 경로나 저장파일명은 응답에 노출되지 않아야 함
+    assert "submitted_file_path" not in data
     assert "document_file_path" not in data
     assert "stored_filename" not in data
 
@@ -94,8 +95,9 @@ def test_get_user_verification_requests(client, auth_headers, created_target):
     data = response.json()
     assert data["total"] == 1
     assert len(data["items"]) == 1
-    assert data["items"][0]["status"] == "pending"
+    assert data["items"][0]["status"] == "PENDING"
     # 목록 응답에 내부 파일 경로나 저장파일명은 포함되지 않음
+    assert "submitted_file_path" not in data["items"][0]
     assert "document_file_path" not in data["items"][0]
     assert "stored_filename" not in data["items"][0]
 
@@ -120,8 +122,9 @@ def test_get_verification_request_detail(client, auth_headers, created_target):
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == request_id
-    assert data["status"] == "pending"
+    assert data["status"] == "PENDING"
     # 상세 응답에도 내부 파일 경로나 저장파일명은 포함되지 않음
+    assert "submitted_file_path" not in data
     assert "document_file_path" not in data
     assert "stored_filename" not in data
 
@@ -150,7 +153,8 @@ def test_list_verification_requests_admin(client, auth_headers, admin_headers):
     assert data["total"] == 3
     assert len(data["items"]) == 3
     assert [item["id"] for item in data["items"]] == [rejected_request["id"], approved_request["id"], pending_request["id"]]
-    assert {item["status"] for item in data["items"]} == {"pending", "approved", "rejected"}
+    assert {item["status"] for item in data["items"]} == {"PENDING", "APPROVED", "REJECTED"}
+    assert all("submitted_file_path" not in item for item in data["items"])
     assert all("document_file_path" not in item for item in data["items"])
 
 
@@ -169,7 +173,7 @@ def test_list_pending_requests_admin(client, auth_headers, admin_headers):
     assert data["total"] == 1
     assert len(data["items"]) == 1
     assert data["items"][0]["id"] == pending_request["id"]
-    assert data["items"][0]["status"] == "pending"
+    assert data["items"][0]["status"] == "PENDING"
 
 
 def test_list_approved_requests_admin(client, auth_headers, admin_headers):
@@ -187,7 +191,7 @@ def test_list_approved_requests_admin(client, auth_headers, admin_headers):
     assert data["total"] == 1
     assert len(data["items"]) == 1
     assert data["items"][0]["id"] == approved_request["id"]
-    assert data["items"][0]["status"] == "approved"
+    assert data["items"][0]["status"] == "APPROVED"
 
 
 def test_list_verification_requests_pagination(client, auth_headers, admin_headers):
@@ -230,7 +234,7 @@ def test_approve_verification_request(client, auth_headers, admin_headers, creat
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "approved"
+    assert data["status"] == "APPROVED"
     assert data["reviewed_by"] is not None
     assert data["reviewed_at"] is not None
 
@@ -278,9 +282,77 @@ def test_reject_verification_request(client, auth_headers, admin_headers, create
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "rejected"
+    assert data["status"] == "REJECTED"
     assert data["reviewed_by"] is not None
     assert data["rejection_reason"] == "Document is not clear and needs higher quality image"
+
+
+def test_need_more_info_verification_request(client, auth_headers, admin_headers, created_target):
+    create_response = client.post(
+        f"/api/v1/targets/{created_target['id']}/verification-requests",
+        data={"verification_type_param": "other"},
+        files={"file": ("doc.pdf", b"fake pdf content", "application/pdf")},
+        headers=auth_headers,
+    )
+    assert create_response.status_code == 201
+
+    response = client.patch(
+        f"/api/v1/admin/verification-requests/{create_response.json()['id']}/need-more-info",
+        json={"admin_note": "Please upload a clearer document"},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "NEED_MORE_INFO"
+    assert data["admin_note"] == "Please upload a clearer document"
+
+
+def test_revoke_verification_request(client, auth_headers, admin_headers, created_target):
+    request = _create_verification_request(client, auth_headers, created_target["id"], "id_card")
+    _approve_verification_request(client, admin_headers, request["id"])
+
+    response = client.patch(
+        f"/api/v1/admin/verification-requests/{request['id']}/revoke",
+        json={"admin_note": "Approval revoked after manual review"},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "REVOKED"
+    assert data["admin_note"] == "Approval revoked after manual review"
+
+
+def test_admin_get_verification_request_detail(client, auth_headers, admin_headers, created_target):
+    request = _create_verification_request(client, auth_headers, created_target["id"], "id_card")
+
+    response = client.get(
+        f"/api/v1/admin/verification-requests/{request['id']}",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == request["id"]
+    assert "submitted_file_path" not in data
+
+
+def test_admin_verification_file_requires_admin(client, auth_headers, admin_headers, created_target):
+    request = _create_verification_request(client, auth_headers, created_target["id"], "id_card")
+
+    user_response = client.get(
+        f"/api/v1/admin/verification-requests/{request['id']}/file",
+        headers=auth_headers,
+    )
+    assert user_response.status_code == 403
+
+    admin_response = client.get(
+        f"/api/v1/admin/verification-requests/{request['id']}/file",
+        headers=admin_headers,
+    )
+    assert admin_response.status_code == 200
+    assert admin_response.content == b"fake pdf content"
 
 
 def test_reject_verification_records_admin_and_reason(client, auth_headers, admin_headers, admin_user, created_target):

@@ -49,6 +49,50 @@ def test_create_persona_with_verification(client, auth_headers, created_target, 
     assert response.json()["status"] == "READY"
 
 
+def test_create_persona_fails_with_revoked_verification(
+    client,
+    auth_headers,
+    admin_headers,
+    created_target,
+    uploaded_media,
+    target_persona_consent,
+    target_verification,
+):
+    revoke_response = client.patch(
+        f"/api/v1/admin/verification-requests/{target_verification.id}/revoke",
+        json={"admin_note": "revoked for test"},
+        headers=admin_headers,
+    )
+    assert revoke_response.status_code == 200
+
+    response = client.post(f"/api/v1/targets/{created_target['id']}/persona", headers=auth_headers)
+    assert response.status_code == 403
+
+
+def test_create_persona_fails_with_expired_verification(
+    client,
+    auth_headers,
+    created_target,
+    uploaded_media,
+    target_persona_consent,
+    target_verification,
+):
+    from datetime import UTC, datetime, timedelta
+
+    from tests.conftest import TestingSessionLocal
+
+    db = TestingSessionLocal()
+    try:
+        verification = db.merge(target_verification)
+        verification.expires_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=1)
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.post(f"/api/v1/targets/{created_target['id']}/persona", headers=auth_headers)
+    assert response.status_code == 403
+
+
 def test_create_persona_requires_consent(client, auth_headers, uploaded_media, target_verification):
     target_id = uploaded_media["image"]["target_id"]
     response = client.post(f"/api/v1/targets/{target_id}/persona", headers=auth_headers)

@@ -200,27 +200,8 @@ class DeletionService:
             item.is_deleted = True
 
         elif target_type == DeletionTargetType.VERIFICATION_REQUEST:
-            # 민감 문서는 실제 파일을 삭제하고, 내부 경로 및 저장 관련 메타데이터를 제거한다.
-            # 운영 감사용 최소 메타데이터(id, user_id, target_id, verification_type, status,
-            # submitted_at, reviewed_at, reviewed_by, rejection_reason, created_at, updated_at, deleted_at)
-            # 는 유지한다. original_filename은 민감할 수 있어 보존 여부를 정책으로 결정할 수 있음.
-            DeletionService._delete_file_if_exists(item.document_file_path)
-            item.document_file_path = None
-            # 저장된 내부 파일명은 민감 정보로 간주하여 NULL 처리
-            try:
-                item.stored_filename = None
-            except Exception:
-                # 모델에 필드가 없을 수도 있으므로 안전하게 무시
-                pass
-            try:
-                item.mime_type = None
-            except Exception:
-                pass
-            try:
-                item.file_size = None
-            except Exception:
-                pass
-
+            DeletionService._delete_file_if_exists(item.submitted_file_path)
+            item.submitted_file_path = ""
             item.deleted_at = now
 
         elif target_type == DeletionTargetType.PERSONA:

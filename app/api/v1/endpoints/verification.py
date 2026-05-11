@@ -1,27 +1,18 @@
-"""입증 요청 API"""
-from fastapi import APIRouter, Depends, HTTPException, status, File, Form, UploadFile
+"""User target verification APIs."""
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
-from app.models.target_verification import VerificationType
-from app.schemas.target_verification import (
-    VerificationRequestResponse,
-    VerificationRequestDetailResponse,
-)
 from app.schemas.common import PaginatedResponse
+from app.schemas.target_verification import VerificationRequestDetailResponse, VerificationRequestResponse
 from app.services.verification_service import verification_service
 from app.utils.exceptions import FileUploadException, RemoryException, ValidationException, to_http_exception
 
-router = APIRouter(
-    prefix="/targets",
-    tags=["verification"],
-)
-
-detail_router = APIRouter(
-    tags=["verification"],
-)
+router = APIRouter(prefix="/targets", tags=["verification"])
+detail_router = APIRouter(tags=["verification"])
 
 
 @router.post(
@@ -32,36 +23,29 @@ detail_router = APIRouter(
 async def create_verification_request(
     target_id: int,
     verification_type_param: str = Form(...),
+    applicant_note: str | None = Form(default=None),
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """입증 요청 생성 (파일 업로드)"""
     try:
-        # 파일 저장
-        file_info = await verification_service.save_verification_file(
-            file,
-            current_user.id,
-        )
-
-        # 입증 요청 생성
+        file_info = await verification_service.save_verification_file(file, current_user.id)
         try:
-            verification_type = VerificationType(verification_type_param.lower())
-        except ValueError as exc:
+            verification_type = verification_service._parse_verification_type(verification_type_param)
+        except (KeyError, ValueError) as exc:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Invalid verification type",
             ) from exc
 
-        request = verification_service.create_verification_request(
+        return verification_service.create_verification_request(
             db,
             current_user.id,
             target_id,
             verification_type,
             file_info,
+            applicant_note=applicant_note,
         )
-
-        return request
     except (ValidationException, FileUploadException) as e:
         raise to_http_exception(e, status.HTTP_400_BAD_REQUEST)
     except RemoryException as e:
@@ -79,7 +63,6 @@ async def list_user_verification_requests(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """사용자의 입증 요청 목록 조회"""
     try:
         result = verification_service.get_user_verification_requests(
             db,
@@ -88,13 +71,7 @@ async def list_user_verification_requests(
             skip,
             limit,
         )
-
-        return PaginatedResponse(
-            total=result["total"],
-            skip=skip,
-            limit=limit,
-            items=result["items"],
-        )
+        return PaginatedResponse(total=result["total"], skip=skip, limit=limit, items=result["items"])
     except RemoryException as e:
         raise to_http_exception(e)
 
@@ -108,20 +85,10 @@ async def get_verification_request_detail(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """입증 요청 상세 조회"""
     try:
         request = verification_service.get_verification_request(db, request_id)
-
-        # 본인 또는 target 소유자만 조회 가능
         if request.user_id != current_user.id and request.target.user_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="접근 권한이 없습니다",
-            )
-
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
         return request
     except RemoryException as e:
         raise to_http_exception(e)
-
-
-

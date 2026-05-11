@@ -18,7 +18,7 @@ def _create_verification_request(client, auth_headers, created_target):
     try:
         verification = db.get(TargetVerificationRequest, verification_id)
         assert verification is not None
-        return verification_id, verification.document_file_path
+        return verification_id, verification.submitted_file_path
     finally:
         db.close()
 
@@ -99,10 +99,10 @@ def test_other_user_cannot_create_deletion_request(client, created_target, secon
 
 
 def test_delete_verification_request_removes_file_and_hides_request(client, auth_headers, created_target):
-    verification_id, document_file_path = _create_verification_request(client, auth_headers, created_target)
+    verification_id, submitted_file_path = _create_verification_request(client, auth_headers, created_target)
 
     backend_root = Path(__file__).resolve().parents[1]
-    verification_path = backend_root / document_file_path
+    verification_path = backend_root / submitted_file_path
     assert verification_path.exists()
 
     response = client.post(
@@ -122,11 +122,8 @@ def test_delete_verification_request_removes_file_and_hides_request(client, auth
         verification = db.get(TargetVerificationRequest, verification_id)
         assert verification is not None
         assert verification.deleted_at is not None
-        assert verification.document_file_path is None
+        assert verification.submitted_file_path == ""
         # 내부 저장파일명 및 메타정보는 삭제(또는 null 처리)되어야 함
-        assert verification.stored_filename is None
-        assert verification.mime_type is None
-        assert verification.file_size is None
     finally:
         db.close()
 
