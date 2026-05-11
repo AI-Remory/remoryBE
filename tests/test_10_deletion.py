@@ -1,5 +1,27 @@
 from pathlib import Path
 
+from app.models.target_verification import TargetVerificationRequest
+from tests.conftest import TestingSessionLocal
+
+
+def _create_verification_request(client, auth_headers, created_target):
+    response = client.post(
+        f"/api/v1/targets/{created_target['id']}/verification-requests",
+        data={"verification_type_param": "family_relation_certificate"},
+        files={"file": ("verification.pdf", b"fake pdf content", "application/pdf")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+
+    verification_id = response.json()["id"]
+    db = TestingSessionLocal()
+    try:
+        verification = db.get(TargetVerificationRequest, verification_id)
+        assert verification is not None
+        return verification_id, verification.document_file_path
+    finally:
+        db.close()
+
 
 def test_delete_photo_memory_removes_file(client, auth_headers, created_photo_memory):
     backend_root = Path(__file__).resolve().parents[1]
@@ -74,3 +96,78 @@ def test_other_user_cannot_create_deletion_request(client, created_target, secon
         headers=second_user_headers,
     )
     assert response.status_code in (403, 404)
+
+
+def test_delete_verification_request_removes_file_and_hides_request(client, auth_headers, created_target):
+    verification_id, document_file_path = _create_verification_request(client, auth_headers, created_target)
+
+    backend_root = Path(__file__).resolve().parents[1]
+    verification_path = backend_root / document_file_path
+    assert verification_path.exists()
+
+    response = client.post(
+        "/api/v1/deletion-requests",
+        json={"target_type": "VERIFICATION_REQUEST", "target_id": verification_id},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["status"] == "COMPLETED"
+    assert data["target_type"] == "VERIFICATION_REQUEST"
+
+    assert not verification_path.exists()
+
+    db = TestingSessionLocal()
+    try:
+        verification = db.get(TargetVerificationRequest, verification_id)
+        assert verification is not None
+        assert verification.deleted_at is not None
+        assert verification.document_file_path is None
+        # 내부 저장파일명 및 메타정보는 삭제(또는 null 처리)되어야 함
+        assert verification.stored_filename is None
+        assert verification.mime_type is None
+        assert verification.file_size is None
+    finally:
+        db.close()
+
+    list_response = client.get(f"/api/v1/targets/{created_target['id']}/verification-requests", headers=auth_headers)
+    assert list_response.status_code == 200
+    assert all(item["id"] != verification_id for item in list_response.json()["items"])
+
+    detail_response = client.get(f"/api/v1/verification-requests/{verification_id}", headers=auth_headers)
+    assert detail_response.status_code == 404
+
+    repeat_response = client.post(
+        "/api/v1/deletion-requests",
+        json={"target_type": "VERIFICATION_REQUEST", "target_id": verification_id},
+        headers=auth_headers,
+    )
+    assert repeat_response.status_code == 404
+
+
+def test_other_user_cannot_delete_verification_request(client, auth_headers, second_user_headers, created_target):
+    verification_id, _ = _create_verification_request(client, auth_headers, created_target)
+
+    response = client.post(
+        "/api/v1/deletion-requests",
+        json={"target_type": "VERIFICATION_REQUEST", "target_id": verification_id},
+        headers=second_user_headers,
+    )
+    assert response.status_code == 403
+
+
+def test_deletion_request_list_records_verification_request(client, auth_headers, created_target):
+    verification_id, _ = _create_verification_request(client, auth_headers, created_target)
+
+    response = client.post(
+        "/api/v1/deletion-requests",
+        json={"target_type": "VERIFICATION_REQUEST", "target_id": verification_id, "reason": "cleanup"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+
+    list_response = client.get("/api/v1/deletion-requests", headers=auth_headers)
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 1
+    assert list_response.json()[0]["target_type"] == "VERIFICATION_REQUEST"
+

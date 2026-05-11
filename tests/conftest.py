@@ -152,10 +152,11 @@ def admin_token(client, admin_user):
     """관리자 토큰"""
     from app.core.security import create_access_token
     from app.core.settings import settings
+    from datetime import timedelta
 
     token = create_access_token(
-        subject=str(admin_user.id),
-        expires_delta=settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+        data={"sub": str(admin_user.id)},
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
     )
     return token
 
@@ -299,13 +300,13 @@ def created_storybook(client, auth_headers, created_interview):
 
 @pytest.fixture
 def storybook_share_consent(client, auth_headers, created_storybook):
-     return _create_consent(
-         client,
-         auth_headers,
-         created_storybook["id"],
-         "storybook_share",
-         details="storybook share consent",
-     )
+    return _create_consent(
+        client,
+        auth_headers,
+        None,
+        "storybook_share",
+        details="storybook share consent",
+    )
 
 
 @pytest.fixture

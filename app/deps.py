@@ -1,5 +1,5 @@
 """의존성 주입"""
-from fastapi import Depends
+from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user_id
@@ -28,6 +28,6 @@ async def get_admin_user(
 ) -> User:
     """관리자 권한 확인 의존성"""
     if user.role != UserRole.ADMIN:
-        raise UnauthorizedException("관리자 권한이 필요합니다")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="관리자 권한이 필요합니다")
     return user
 

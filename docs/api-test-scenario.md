@@ -62,6 +62,27 @@
 7. `READY` 상태가 반환되는지 확인한다.
 8. 다른 사용자 접근은 `403` 또는 `404`인지 확인한다.
 
+### Verification -> Persona creation flow (end-to-end)
+
+이 시나리오는 verification이 persona 생성 흐름에 미치는 영향을 검증한다.
+
+1. `POST /api/v1/targets` — Target 생성
+   - 기대: `201 Created` 및 target id 반환
+2. `POST /api/v1/targets/{target_id}/verification-requests` — VerificationRequest 제출 (multipart/form-data)
+   - 업로드 파일이 `uploads/verifications/{user_id}/...`에 생성되는지 확인
+   - 기대: `201 Created`, status=`PENDING`
+3. `POST /api/v1/targets/{target_id}/persona` — Persona 생성 시도
+   - 기대: verification이 승인되지 않았으므로 persona 생성이 실패해야 함 (`422` 또는 `403`)
+4. 관리자 계정으로 `PATCH /api/v1/admin/verification-requests/{request_id}/approve` — Admin 승인
+   - 기대: status=`APPROVED`, `reviewed_by` 및 `reviewed_at`가 기록됨
+5. 다시 `POST /api/v1/targets/{target_id}/persona` — Persona 생성
+   - 기대: verification이 승인되었으므로 persona 생성 성공 (`201` 또는 `200`, `status=READY`)
+6. `POST /api/v1/deletion-requests` with `target_type=VERIFICATION_REQUEST` — VerificationRequest 삭제 요청
+   - 기대: 삭제 요청 처리 후 실제 document 파일이 삭제되고, DB의 `document_file_path`, `stored_filename`, `original_filename` 같은 민감 필드가 NULL 처리되며 `deleted_at`이 기록됨
+7. 파일 시스템 확인: 삭제된 파일이 더 이상 존재하지 않는지 확인
+
+이 흐름은 프론트엔드가 verification 상태에 의존해 persona 생성 버튼을 활성화/비활성화하거나, 파일 노출을 시도하지 않도록 설계되었는지 검증한다.
+
 ### 6. PersonaChat / PersonaMessage
 
 1. `POST /api/v1/personas/{persona_id}/chats`

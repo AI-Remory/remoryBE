@@ -36,11 +36,20 @@ class TargetVerificationRequest(BaseModel):
         nullable=False,
         index=True,
     )
-    document_file_path = Column(String(512), nullable=False)
+    # 민감 문서 관련 메타데이터
+    # 정책: 실제 파일은 삭제 요청 시 제거하고, 내부 경로 및 저장파일명(stored_filename),
+    # MIME 타입 및 파일 크기와 같은 민감 정보를 null 처리한다.
+    # 운영/감사용 최소 메타데이터(id, user_id, target_id, verification_type, status,
+    # submitted_at, reviewed_at, reviewed_by, rejection_reason, created_at, updated_at, deleted_at)
+    # 은 기록으로 남긴다. original_filename(사용자가 업로드한 원래 파일명)은 민감할 수 있으므로
+    # 서비스 정책에 따라 삭제하거나 보관할 수 있다. 현재는 운영상 식별을 돕기 위해 유지하되,
+    # 필요시 삭제하도록 정책을 변경할 수 있다.
+    document_file_path = Column(String(512), nullable=True)
     original_filename = Column(String(255), nullable=False)
-    stored_filename = Column(String(255), nullable=False, unique=True)
-    mime_type = Column(String(100), nullable=False)
-    file_size = Column(Integer, nullable=False)
+    # stored_filename/mime_type/file_size는 삭제 시 민감 정보로 간주하여 NULL 처리 가능하도록 변경
+    stored_filename = Column(String(255), nullable=True, unique=True)
+    mime_type = Column(String(100), nullable=True)
+    file_size = Column(Integer, nullable=True)
     submitted_at = Column(DateTime, nullable=False)
     reviewed_at = Column(DateTime, nullable=True)
     reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)

@@ -1,10 +1,11 @@
 """관리자 API"""
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status as http_status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.deps import get_admin_user
 from app.models.user import User
+from app.models.target_verification import VerificationStatus
 from app.schemas.target_verification import (
     VerificationRequestAdminResponse,
     VerificationRequestApproveRequest,
@@ -24,24 +25,31 @@ router = APIRouter(
     "/verification-requests",
     response_model=PaginatedResponse[VerificationRequestAdminResponse],
 )
-async def list_pending_verification_requests(
-    skip: int = 0,
-    limit: int = 20,
+async def list_verification_requests(
+    status: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=20, ge=1, le=100),
     admin_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
-    """미검토 입증 요청 목록 조회"""
+    """관리자 입증 요청 목록 조회"""
     try:
-        result = verification_service.get_pending_verification_requests(
-            db,
-            skip,
-            limit,
-        )
+        status_filter = None
+        if status is not None:
+            try:
+                status_filter = VerificationStatus(status.lower())
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Invalid status value",
+                ) from exc
+
+        result = verification_service.get_admin_verification_requests(db, status_filter, page, size)
 
         return PaginatedResponse(
             total=result["total"],
-            skip=skip,
-            limit=limit,
+            skip=(page - 1) * size,
+            limit=size,
             items=result["items"],
         )
     except RemoryException as e:

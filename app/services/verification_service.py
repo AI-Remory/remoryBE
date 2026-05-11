@@ -3,17 +3,16 @@ import os
 import uuid
 from datetime import datetime, UTC
 from pathlib import Path
+from typing import Optional
+
 from fastapi import UploadFile
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
-from sqlalchemy import select, and_
 
 from app.models.target_verification import TargetVerificationRequest, VerificationStatus, VerificationType
 from app.models.target import Target
 from app.utils.exceptions import NotFoundException, ValidationException, FileUploadException
 from app.utils.constants import UPLOAD_DIR, MAX_UPLOAD_SIZE
-
-VERIFICATION_UPLOAD_DIR = os.path.join(UPLOAD_DIR, "verifications")
-
 
 class VerificationService:
     """입증 요청 관리 서비스"""
@@ -23,10 +22,21 @@ class VerificationService:
         return datetime.now(UTC).replace(tzinfo=None)
 
     @staticmethod
+    def _backend_root() -> Path:
+        return Path(__file__).resolve().parents[2]
+
+    @staticmethod
+    def _upload_root() -> Path:
+        base = Path(UPLOAD_DIR)
+        if not base.is_absolute():
+            base = VerificationService._backend_root() / base
+        return base
+
+    @staticmethod
     def ensure_verification_upload_dir(user_id: int):
         """사용자별 업로드 디렉토리 생성"""
-        user_dir = os.path.join(VERIFICATION_UPLOAD_DIR, str(user_id))
-        Path(user_dir).mkdir(parents=True, exist_ok=True)
+        user_dir = VerificationService._upload_root() / "verifications" / str(user_id)
+        user_dir.mkdir(parents=True, exist_ok=True)
         return user_dir
 
     @staticmethod
@@ -57,13 +67,13 @@ class VerificationService:
         # UUID 기반 파일명 생성
         file_ext = Path(upload_file.filename).suffix.lower()
         stored_filename = f"{uuid.uuid4()}{file_ext}"
-        file_path = os.path.join(user_dir, stored_filename)
+        file_path = user_dir / stored_filename
 
         # 파일 저장
         with open(file_path, "wb") as f:
             f.write(contents)
 
-        document_file_path = os.path.relpath(file_path, UPLOAD_DIR)
+        document_file_path = file_path.resolve().relative_to(VerificationService._backend_root()).as_posix()
 
         return {
             "document_file_path": document_file_path,
@@ -135,11 +145,12 @@ class VerificationService:
         """입증 요청 조회"""
         request = db.execute(
             select(TargetVerificationRequest).where(
-                TargetVerificationRequest.id == request_id
+                TargetVerificationRequest.id == request_id,
+                TargetVerificationRequest.deleted_at.is_(None),
             )
         ).scalar_one_or_none()
 
-        if not request or request.deleted_at is not None:
+        if not request:
             raise NotFoundException("입증 요청을 찾을 수 없습니다")
 
         return request
@@ -194,30 +205,56 @@ class VerificationService:
         }
 
     @staticmethod
+    def get_admin_verification_requests(
+        db: Session,
+        status: Optional[VerificationStatus] = None,
+        page: int = 1,
+        size: int = 20,
+    ) -> dict:
+        """관리자용 입증 요청 목록 조회"""
+        query = select(TargetVerificationRequest).where(
+            TargetVerificationRequest.deleted_at.is_(None)
+        )
+
+        count_query = select(func.count(TargetVerificationRequest.id)).where(
+            TargetVerificationRequest.deleted_at.is_(None)
+        )
+
+        if status is not None:
+            query = query.where(TargetVerificationRequest.status == status)
+            count_query = count_query.where(TargetVerificationRequest.status == status)
+
+        order_column = func.coalesce(
+            TargetVerificationRequest.submitted_at,
+            TargetVerificationRequest.created_at,
+        )
+        query = query.order_by(order_column.desc(), TargetVerificationRequest.id.desc())
+
+        offset = (page - 1) * size
+        total_count = db.execute(count_query).scalar_one() or 0
+        items = db.execute(query.offset(offset).limit(size)).scalars().all()
+
+        return {
+            "total": total_count,
+            "items": items,
+            "page": page,
+            "size": size,
+        }
+
+    @staticmethod
     def get_pending_verification_requests(
         db: Session,
         skip: int = 0,
         limit: int = 20,
     ) -> dict:
-        """미검토 입증 요청 목록 조회 (관리자용)"""
-        query = select(TargetVerificationRequest).where(
-            and_(
-                TargetVerificationRequest.status == VerificationStatus.PENDING,
-                TargetVerificationRequest.deleted_at.is_(None),
-            )
+        """미검토 입증 요청 목록 조회 (호환성 유지용)"""
+        page = (skip // limit) + 1 if limit > 0 else 1
+        return VerificationService.get_admin_verification_requests(
+            db,
+            status=VerificationStatus.PENDING,
+            page=page,
+            size=limit,
         )
-
-        total = db.execute(query).scalars().all()
-        total_count = len(total)
-
-        items = db.execute(
-            query.offset(skip).limit(limit).order_by(TargetVerificationRequest.submitted_at.desc())
-        ).scalars().all()
-
-        return {
-            "total": total_count,
-            "items": items,
-        }
 
     @staticmethod
     def approve_verification_request(
@@ -234,6 +271,7 @@ class VerificationService:
         request.status = VerificationStatus.APPROVED
         request.reviewed_at = VerificationService._utcnow_naive()
         request.reviewed_by = admin_user_id
+        request.rejection_reason = None
 
         db.commit()
         db.refresh(request)

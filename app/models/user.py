@@ -31,4 +31,9 @@ class User(BaseModel):
     memory_groups = relationship("MemoryGroup", back_populates="owner", cascade="all, delete-orphan")
     consent_logs = relationship("ConsentLog", back_populates="user", cascade="all, delete-orphan")
     deletion_requests = relationship("DeletionRequest", back_populates="user", cascade="all, delete-orphan")
-    verification_requests = relationship("TargetVerificationRequest", back_populates="user", cascade="all, delete-orphan")
+    verification_requests = relationship(
+        "TargetVerificationRequest",
+        back_populates="user",
+        foreign_keys="TargetVerificationRequest.user_id",
+        cascade="all, delete-orphan",
+    )

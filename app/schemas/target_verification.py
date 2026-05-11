@@ -4,7 +4,6 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.target_verification import VerificationType, VerificationStatus
-from app.schemas.common import TimestampMixin
 
 
 class VerificationRequestCreateRequest(BaseModel):
@@ -15,22 +14,21 @@ class VerificationRequestCreateRequest(BaseModel):
     )
 
 
-class VerificationRequestResponse(TimestampMixin):
+class VerificationRequestResponse(BaseModel):
     """입증 요청 응답"""
     id: int
     user_id: int
     target_id: int
     verification_type: VerificationType
     status: VerificationStatus
-    document_file_path: str
     original_filename: str
-    stored_filename: str
     mime_type: str
     file_size: int
     submitted_at: datetime
     reviewed_at: Optional[datetime] = None
     reviewed_by: Optional[int] = None
     rejection_reason: Optional[str] = None
+    created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -57,5 +55,5 @@ class VerificationRequestRejectRequest(BaseModel):
 
 class VerificationRequestAdminResponse(VerificationRequestResponse):
     """관리자용 입증 요청 응답"""
-    reviewer_nickname: Optional[str] = None
+    pass
 

@@ -63,6 +63,8 @@ title=Birthday
 description=Family photo
 ```
 
+Note: API 응답에는 내부 저장 파일 경로(예: `document_file_path`, `file_path`, `stored_filename`)를 일반 사용자에게 노출하지 않습니다. 관리자 전용 엔드포인트만 심사 목적으로 내부 경로를 포함할 수 있으니 프론트엔드에서는 해당 필드에 의존하지 마세요.
+
 ### Date Format
 
 날짜/시간은 ISO 8601 문자열을 사용한다.
@@ -89,7 +91,8 @@ description=Family photo
 | `storybook.status` | `DRAFT`, `GENERATED`, `FAILED` |
 | `storybook.visibility` | `PRIVATE`, `LINK`, `GROUP`, `PUBLIC` |
 | `group.role` | `OWNER`, `MEMBER`, `VIEWER` |
-| `deletion.target_type` | `TARGET`, `TARGET_MEDIA`, `PERSONA`, `PERSONA_CHAT`, `PERSONA_MESSAGE`, `PHOTO_MEMORY`, `STORYBOOK`, `SHARE_LINK`, `MEMORY_GROUP`, `ACCOUNT` |
+| `verification.status` | `PENDING`, `APPROVED`, `REJECTED` |
+| `deletion.target_type` | `TARGET`, `TARGET_MEDIA`, `PERSONA`, `PERSONA_CHAT`, `PERSONA_MESSAGE`, `PHOTO_MEMORY`, `STORYBOOK`, `SHARE_LINK`, `MEMORY_GROUP`, `ACCOUNT`, `VERIFICATION_REQUEST` |
 | `deletion.status` | `REQUESTED`, `COMPLETED`, `FAILED` |
 
 ## A. Auth
@@ -384,6 +387,207 @@ Response:
 
 Errors: `401`, `403`, `404`
 
+## C. Target Verification
+
+Target에 대한 신원/권한 검증 요청(verification request)을 제출하고 조회하는 API입니다. 민감 파일 경로(`document_file_path`, 내부 저장 경로 등)는 일반 사용자 응답에 노출되지 않습니다. 관리자 전용 엔드포인트에서만 심사 목적의 내부 정보 접근이 허용됩니다.
+
+### Submit Verification Request
+
+- Method: `POST`
+- URL: `/api/v1/targets/{target_id}/verification-requests`
+- Auth: Yes
+- Permission: target 소유자
+- Description: 타겟에 대한 verification request(신분증, 증빙서류 등)를 multipart/form-data로 제출한다. 실제 파일은 백엔드에서 안전한 위치에 저장되며, 일반 사용자 응답에는 내부 파일 경로가 포함되지 않는다.
+
+Request (multipart/form-data):
+
+```text
+verification_type=IDENTITY_DOCUMENT
+document=@id_card.jpg; type=image/jpeg
+notes=Scanned ID front side
+```
+
+Response (201 Created):
+
+```json
+{
+  "id": 10,
+  "target_id": 1,
+  "user_id": 1,
+  "verification_type": "IDENTITY_DOCUMENT",
+  "status": "PENDING",
+  "submitted_at": "2026-05-09T11:00:00",
+  "reviewed_at": null,
+  "reviewed_by": null,
+  "rejection_reason": null
+}
+```
+
+Major Errors: `400` (multipart/form-data 오류), `401`, `403`, `404`, `422`
+
+### List My Verification Requests for a Target
+
+- Method: `GET`
+- URL: `/api/v1/targets/{target_id}/verification-requests`
+- Auth: Yes
+- Permission: target 소유자
+- Description: 본인이 제출한 target의 verification request 목록을 조회한다. `document_file_path`, `stored_filename` 등 내부 파일 경로는 노출되지 않는다.
+
+Response (200 OK):
+
+```json
+{
+  "total": 1,
+  "items": [
+    {
+      "id": 10,
+      "verification_type": "IDENTITY_DOCUMENT",
+      "status": "PENDING",
+      "submitted_at": "2026-05-09T11:00:00",
+      "reviewed_at": null,
+      "rejection_reason": null
+    }
+  ]
+}
+```
+
+Major Errors: `401`, `403`, `404`
+
+### Get Verification Request Detail (user)
+
+- Method: `GET`
+- URL: `/api/v1/verification-requests/{request_id}`
+- Auth: Yes
+- Permission: request 제출자 또는 target 소유자
+- Description: verification request의 상태 및 감사 목적의 메타데이터를 조회한다. 민감 파일 경로는 포함되지 않는다.
+
+Response (200 OK):
+
+```json
+{
+  "id": 10,
+  "target_id": 1,
+  "user_id": 1,
+  "verification_type": "IDENTITY_DOCUMENT",
+  "status": "PENDING",
+  "submitted_at": "2026-05-09T11:00:00",
+  "reviewed_at": null,
+  "reviewed_by": null,
+  "rejection_reason": null
+}
+```
+
+Major Errors: `401`, `403`, `404`
+
+## Admin: Verification Requests
+
+관리자(혹은 검수 담당자)가 검토/승인/거절을 수행하는 엔드포인트입니다. 관리자 엔드포인트는 내부 파일 경로(`document_file_path`, `stored_filename`)나 원본 파일명(`original_filename`) 같은 심사에 필요한 정보를 포함할 수 있으며, 접근 권한/로그를 엄격히 제한해야 합니다.
+
+### List Verification Requests (admin)
+
+- Method: `GET`
+- URL: `/api/v1/admin/verification-requests`
+- Auth: Yes
+- Permission: 관리자
+- Description: 모든 verification request를 조회한다. `status` 쿼리를 통해 필터링 가능하다.
+
+Request example:
+
+```
+GET /api/v1/admin/verification-requests?skip=0&limit=20
+```
+
+Response (200 OK):
+
+```json
+{
+  "total": 2,
+  "items": [
+    {
+      "id": 10,
+      "target_id": 1,
+      "user_id": 1,
+      "verification_type": "IDENTITY_DOCUMENT",
+      "status": "PENDING",
+      "submitted_at": "2026-05-09T11:00:00",
+      "document_file_path": "uploads/verifications/1/uuid.jpg",
+      "original_filename": "id_card.jpg",
+      "stored_filename": "uuid.jpg",
+      "reviewed_at": null,
+      "reviewed_by": null,
+      "rejection_reason": null
+    }
+  ]
+}
+```
+
+Major Errors: `401`, `403`, `422`
+
+### List Verification Requests (admin) - filter by status
+
+- Method: `GET`
+- URL: `/api/v1/admin/verification-requests?status=PENDING`
+- Auth: Yes
+- Permission: 관리자
+- Description: 특정 상태(`PENDING`, `APPROVED`, `REJECTED`)의 검수 대상을 조회한다.
+
+Response: same as above but filtered.
+
+Major Errors: `401`, `403`, `422`
+
+### Approve Verification Request
+
+- Method: `PATCH`
+- URL: `/api/v1/admin/verification-requests/{request_id}/approve`
+- Auth: Yes
+- Permission: 관리자
+- Description: 요청을 승인한다. 승인 시 해당 target에 대한 verification 상태를 `APPROVED`로 변경한다.
+
+Request body: 없음
+
+Response (200 OK):
+
+```json
+{
+  "id": 10,
+  "status": "APPROVED",
+  "reviewed_at": "2026-05-09T11:30:00",
+  "reviewed_by": 100
+}
+```
+
+Major Errors: `401`, `403`, `404`, `422`
+
+### Reject Verification Request
+
+- Method: `PATCH`
+- URL: `/api/v1/admin/verification-requests/{request_id}/reject`
+- Auth: Yes
+- Permission: 관리자
+- Description: 요청을 거절한다. 거절 시 `rejection_reason`을 기록한다.
+
+Request body (application/json):
+
+```json
+{
+  "rejection_reason": "ID image is blurred"
+}
+```
+
+Response (200 OK):
+
+```json
+{
+  "id": 10,
+  "status": "REJECTED",
+  "reviewed_at": "2026-05-09T11:30:00",
+  "reviewed_by": 100,
+  "rejection_reason": "ID image is blurred"
+}
+```
+
+Major Errors: `401`, `403`, `404`, `422`
+
 ### Delete Media
 
 - Method: `DELETE`
@@ -410,7 +614,9 @@ Errors: `401`, `403`, `404`
 - Method: `POST`
 - URL: `/api/v1/targets/{target_id}/persona`
 - Auth: Yes
-- Description: target 정보와 media 목록을 기반으로 mock persona를 즉시 `READY` 상태로 생성한다.
+- Description: target 정보와 media 목록을 기반으로 mock persona를 즉시 `READY` 상태로 생성한다. 단, 다음 전제 조건이 만족되어야 한다:
+  - 해당 `target`에 대한 verification 상태가 `APPROVED` 여야 한다.
+  - 사용자(또는 대상자)가 ConsentLog에 동의(또는 동의 기록이 존재)해야 한다.
 
 Request Body: 없음
 
@@ -449,7 +655,11 @@ Response:
 }
 ```
 
-Errors: `401`, `403`, `404`
+Errors:
+
+- `401` (인증 필요)
+- `403` (권한 없음 또는 ConsentLog 미동의)
+- `422` (전제 조건 불충분: verification 미승인 등)
 
 ### Get Persona
 
@@ -1278,6 +1488,12 @@ Response:
 ```
 
 Errors: `401`, `403`, `404`, `422`
+
+Note on `VERIFICATION_REQUEST` deletion:
+
+- `target_type`에 `VERIFICATION_REQUEST`를 지정하면 해당 verification의 실제 문서 파일(document file)을 즉시 삭제하고, 내부 파일 경로(`document_file_path`), 내부 저장 파일명(`stored_filename`), (가능한 경우) `original_filename`을 NULL 처리하여 민감 데이터를 DB에 남기지 않습니다. 다만 `deleted_at` 등 운영·감사용 최소 메타데이터는 기록으로 남겨 감사가 가능하도록 합니다.
+
+Major Errors: `401`, `403`, `404`, `422`
 
 ### List DeletionRequests
 

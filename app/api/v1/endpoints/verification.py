@@ -1,5 +1,5 @@
 """입증 요청 API"""
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, status, File, Form, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -12,10 +12,14 @@ from app.schemas.target_verification import (
 )
 from app.schemas.common import PaginatedResponse
 from app.services.verification_service import verification_service
-from app.utils.exceptions import RemoryException, to_http_exception
+from app.utils.exceptions import FileUploadException, RemoryException, ValidationException, to_http_exception
 
 router = APIRouter(
     prefix="/targets",
+    tags=["verification"],
+)
+
+detail_router = APIRouter(
     tags=["verification"],
 )
 
@@ -27,7 +31,7 @@ router = APIRouter(
 )
 async def create_verification_request(
     target_id: int,
-    verification_type_param: str,
+    verification_type_param: str = Form(...),
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -41,7 +45,13 @@ async def create_verification_request(
         )
 
         # 입증 요청 생성
-        verification_type = VerificationType(verification_type_param)
+        try:
+            verification_type = VerificationType(verification_type_param.lower())
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid verification type",
+            ) from exc
 
         request = verification_service.create_verification_request(
             db,
@@ -52,6 +62,8 @@ async def create_verification_request(
         )
 
         return request
+    except (ValidationException, FileUploadException) as e:
+        raise to_http_exception(e, status.HTTP_400_BAD_REQUEST)
     except RemoryException as e:
         raise to_http_exception(e)
 
@@ -87,7 +99,7 @@ async def list_user_verification_requests(
         raise to_http_exception(e)
 
 
-@router.get(
+@detail_router.get(
     "/verification-requests/{request_id}",
     response_model=VerificationRequestDetailResponse,
 )
