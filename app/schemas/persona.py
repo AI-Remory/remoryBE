@@ -2,7 +2,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.persona import PersonaStatus
+from app.models.persona import PersonaStatus, VoiceProfileStatus
 from app.schemas.common import TimestampMixin
 
 
@@ -17,12 +17,21 @@ class PersonaStatusResponse(BaseModel):
     target_id: int
     status: PersonaStatus
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class PersonaVoiceProfileResponse(TimestampMixin):
     id: int
     persona_id: int
+    target_id: Optional[int] = None
+    provider: Optional[str] = None
+    model_name: Optional[str] = None
+    status: Optional[VoiceProfileStatus] = None
+    reference_audio_count: Optional[int] = None
+    reference_audio_total_seconds: Optional[float] = None
+    voice_profile_path: Optional[str] = None
+    sample_audio_path: Optional[str] = None
+    error_message: Optional[str] = None
     reference_voice_file_path: Optional[str]
     reference_voice_mime_type: Optional[str]
     reference_voice_duration: Optional[int]
@@ -31,7 +40,7 @@ class PersonaVoiceProfileResponse(TimestampMixin):
     voice_name: Optional[str]
     metadata: Optional[dict[str, Any]] = Field(default=None, validation_alias="profile_metadata")
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class PersonaResponse(TimestampMixin):

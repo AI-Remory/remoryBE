@@ -4,7 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.media import MediaType, TargetMedia
-from app.models.persona import Persona, PersonaStatus, PersonaVoiceProfile
+from app.models.persona import Persona, PersonaStatus, PersonaVoiceProfile, VoiceProfileStatus
 from app.models.target import Target
 from app.services.ai_service import ai_service
 from app.services.consent_service import consent_service
@@ -125,6 +125,12 @@ class PersonaService:
             persona.voice_profile.reference_voice_file_path = representative_voice.file_path
             persona.voice_profile.reference_voice_mime_type = representative_voice.mime_type
             persona.voice_profile.reference_voice_duration = representative_voice.duration_seconds
+            persona.voice_profile.target_id = target_id
+            persona.voice_profile.provider = "mock"
+            persona.voice_profile.status = VoiceProfileStatus.READY
+            persona.voice_profile.reference_audio_count = voice_count
+            persona.voice_profile.reference_audio_total_seconds = representative_voice.duration_seconds
+            persona.voice_profile.error_message = None
             persona.voice_profile.profile_metadata = {
                 "voice_media_count": voice_count,
                 "representative_voice_file_path": representative_voice.file_path,

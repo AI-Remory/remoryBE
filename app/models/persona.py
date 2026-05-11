@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Boolean, Column, Enum, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, Column, Enum, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import relationship
 
 from app.models.base import BaseModel
@@ -12,6 +12,15 @@ class PersonaStatus(str, enum.Enum):
     PENDING = "PENDING"
     READY = "READY"
     FAILED = "FAILED"
+
+
+class VoiceProfileStatus(str, enum.Enum):
+    """Voice cloning profile generation status."""
+
+    PENDING = "PENDING"
+    READY = "READY"
+    FAILED = "FAILED"
+    DISABLED = "DISABLED"
 
 
 class Persona(BaseModel):
@@ -52,6 +61,18 @@ class PersonaVoiceProfile(BaseModel):
 
     id = Column(Integer, primary_key=True, index=True)
     persona_id = Column(Integer, ForeignKey("personas.id"), nullable=False, index=True, unique=True)
+    target_id = Column(Integer, ForeignKey("targets.id"), nullable=True, index=True)
+
+    provider = Column(String(100), nullable=False, default="mock")
+    model_name = Column(String(255), nullable=True)
+    status = Column(Enum(VoiceProfileStatus), default=VoiceProfileStatus.PENDING, nullable=False, index=True)
+    reference_audio_count = Column(Integer, default=0, nullable=False)
+    reference_audio_total_seconds = Column(Float, nullable=True)
+    voice_profile_path = Column(String(512), nullable=True)
+    sample_audio_path = Column(String(512), nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    # Legacy fields retained for API/backward compatibility.
     reference_voice_file_path = Column(String(512), nullable=True)
     reference_voice_mime_type = Column(String(100), nullable=True)
     reference_voice_duration = Column(Integer, nullable=True)
@@ -64,3 +85,4 @@ class PersonaVoiceProfile(BaseModel):
     is_deleted = Column(Boolean, default=False, nullable=False)
 
     persona = relationship("Persona", back_populates="voice_profile")
+    target = relationship("Target")

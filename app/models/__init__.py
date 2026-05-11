@@ -4,7 +4,7 @@ from app.models.user import User, UserRole
 from app.models.auth import RefreshToken
 from app.models.target import Target, TargetType
 from app.models.media import TargetMedia, MediaType
-from app.models.persona import Persona, PersonaStatus, PersonaVoiceProfile
+from app.models.persona import Persona, PersonaStatus, PersonaVoiceProfile, VoiceProfileStatus
 from app.models.chat import PersonaChat, PersonaMessage, MessageType, SenderType
 from app.models.interview import (
     AIInterviewAnswer,
@@ -40,6 +40,7 @@ __all__ = [
     "Persona",
     "PersonaStatus",
     "PersonaVoiceProfile",
+    "VoiceProfileStatus",
     "PersonaChat",
     "PersonaMessage",
     "MessageType",

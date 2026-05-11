@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # Text-to-Speech
     TTS_PROVIDER: str = "mock"
 
+    # Voice Cloning
+    VOICE_CLONE_PROVIDER: str = "mock"
+    OPENVOICE_CHECKPOINT_PATH: str = ""
+
     # File Upload
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_SIZE: int = 52428800  # 50MB
