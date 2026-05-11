@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session, selectinload, with_loader_criteria
 from app.models.sharing import ShareLink
 from app.models.storybook import StoryBook, StoryBookVisibility, StoryChapter
 from app.schemas.sharing import ShareLinkCreateRequest
+from app.models.consent import ConsentType
+from app.services.consent_service import consent_service
 from app.utils.exceptions import ForbiddenException, NotFoundException
 
 
@@ -66,6 +68,7 @@ class ShareService:
         share_data: ShareLinkCreateRequest,
     ) -> dict:
         storybook = ShareService._get_owned_storybook(db, user_id, storybook_id)
+        consent_service.check_consent(db, user_id, None, ConsentType.STORYBOOK_SHARE)
         share_link = ShareLink(
             storybook_id=storybook_id,
             owner_id=user_id,

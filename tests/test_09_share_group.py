@@ -1,4 +1,4 @@
-def test_create_share_link_and_public_read(client, auth_headers, created_storybook):
+def test_create_share_link_and_public_read(client, auth_headers, created_storybook, storybook_share_consent):
     response = client.post(
         f"/api/v1/storybooks/{created_storybook['id']}/share-links",
         json={},
@@ -16,7 +16,7 @@ def test_create_share_link_and_public_read(client, auth_headers, created_storybo
     assert "file_path" not in payload
 
 
-def test_disable_share_link_blocks_public_read(client, auth_headers, created_storybook):
+def test_disable_share_link_blocks_public_read(client, auth_headers, created_storybook, storybook_share_consent):
     share_link = client.post(
         f"/api/v1/storybooks/{created_storybook['id']}/share-links",
         json={},
@@ -36,6 +36,7 @@ def test_create_group_add_member_and_share_storybook(
     second_user,
     second_user_headers,
     created_storybook,
+    storybook_share_consent,
 ):
     group_response = client.post(
         "/api/v1/groups",
@@ -63,6 +64,31 @@ def test_create_group_add_member_and_share_storybook(
     assert group_storybooks.status_code == 200
     assert group_storybooks.json()[0]["title"] == created_storybook["title"]
     assert "file_path" not in group_storybooks.json()[0]
+
+
+def test_share_link_requires_consent(client, created_storybook, auth_headers):
+    response = client.post(
+        f"/api/v1/storybooks/{created_storybook['id']}/share-links",
+        json={},
+        headers=auth_headers,
+    )
+    assert response.status_code == 403
+
+
+def test_group_share_requires_consent(client, auth_headers, created_storybook):
+    group_response = client.post(
+        "/api/v1/groups",
+        json={"name": "Family", "description": "Family memories"},
+        headers=auth_headers,
+    )
+    assert group_response.status_code == 201
+    group = group_response.json()
+
+    response = client.post(
+        f"/api/v1/groups/{group['id']}/storybooks/{created_storybook['id']}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 403
 
 
 def test_other_user_cannot_create_share_link(client, created_storybook, second_user_headers):

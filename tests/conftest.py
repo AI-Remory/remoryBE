@@ -73,6 +73,20 @@ def client():
     app.dependency_overrides.clear()
 
 
+def _create_consent(client, auth_headers, target_id, consent_type, is_consented=True, details=None):
+    payload = {
+        "target_id": target_id,
+        "consent_type": consent_type,
+        "is_consented": is_consented,
+    }
+    if details is not None:
+        payload["details"] = details
+
+    response = client.post("/api/v1/consents", json=payload, headers=auth_headers)
+    assert response.status_code == 201
+    return response.json()
+
+
 @pytest.fixture
 def test_user_data():
     return {
@@ -123,7 +137,28 @@ def created_target(client, auth_headers):
 
 
 @pytest.fixture
-def uploaded_media(client, auth_headers, created_target):
+def target_media_consents(client, auth_headers, created_target):
+    target_id = created_target["id"]
+    return {
+        "photo": _create_consent(
+            client,
+            auth_headers,
+            target_id,
+            "photo_collection",
+            details="photo upload consent",
+        ),
+        "voice": _create_consent(
+            client,
+            auth_headers,
+            target_id,
+            "voice_collection",
+            details="voice upload consent",
+        ),
+    }
+
+
+@pytest.fixture
+def uploaded_media(client, auth_headers, created_target, target_media_consents):
     target_id = created_target["id"]
     image = client.post(
         f"/api/v1/targets/{target_id}/media",
@@ -144,7 +179,18 @@ def uploaded_media(client, auth_headers, created_target):
 
 
 @pytest.fixture
-def created_persona(client, auth_headers, created_target, uploaded_media):
+def target_persona_consent(client, auth_headers, created_target, target_media_consents):
+    return _create_consent(
+        client,
+        auth_headers,
+        created_target["id"],
+        "persona_creation",
+        details="persona generation consent",
+    )
+
+
+@pytest.fixture
+def created_persona(client, auth_headers, created_target, uploaded_media, target_persona_consent):
     response = client.post(f"/api/v1/targets/{created_target['id']}/persona", headers=auth_headers)
     assert response.status_code == 201
     return response.json()
@@ -209,3 +255,16 @@ def created_storybook(client, auth_headers, created_interview):
     )
     assert response.status_code == 201
     return response.json()
+
+
+@pytest.fixture
+def storybook_share_consent(client, auth_headers, created_storybook):
+    return _create_consent(
+        client,
+        auth_headers,
+        None,
+        "storybook_share",
+        details="storybook share consent",
+    )
+
+

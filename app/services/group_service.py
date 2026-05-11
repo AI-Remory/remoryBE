@@ -7,6 +7,8 @@ from app.models.sharing import GroupMember, GroupMemberRole, GroupStoryBook, Mem
 from app.models.storybook import StoryBook, StoryBookVisibility
 from app.models.user import User
 from app.schemas.sharing import GroupMemberCreateRequest, MemoryGroupCreateRequest
+from app.models.consent import ConsentType
+from app.services.consent_service import consent_service
 from app.utils.exceptions import ForbiddenException, NotFoundException
 
 
@@ -156,6 +158,8 @@ class GroupService:
             raise NotFoundException("StoryBook", storybook_id)
         if storybook.user_id != user_id:
             raise ForbiddenException("You can only share your own storybooks")
+
+        consent_service.check_consent(db, user_id, None, ConsentType.STORYBOOK_SHARE)
 
         existing_share = db.execute(
             select(GroupStoryBook).where(

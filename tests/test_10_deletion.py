@@ -32,7 +32,7 @@ def test_delete_target_media_removes_file(client, auth_headers, uploaded_media):
     assert not media_path.exists()
 
 
-def test_delete_storybook_blocks_share_link(client, auth_headers, created_storybook):
+def test_delete_storybook_blocks_share_link(client, auth_headers, created_storybook, storybook_share_consent):
     share_link = client.post(
         f"/api/v1/storybooks/{created_storybook['id']}/share-links",
         json={},

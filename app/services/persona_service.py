@@ -7,6 +7,8 @@ from app.models.media import MediaType, TargetMedia
 from app.models.persona import Persona, PersonaStatus, PersonaVoiceProfile
 from app.models.target import Target
 from app.services.ai_service import ai_service
+from app.services.consent_service import consent_service
+from app.models.consent import ConsentType
 from app.utils.exceptions import ForbiddenException, NotFoundException
 
 
@@ -73,10 +75,15 @@ class PersonaService:
     async def create_persona(db: Session, target_id: int, user_id: int) -> Persona:
         target = PersonaService._get_owned_target(db, target_id, user_id)
 
-        # TODO: ConsentLog 구현 완료 후 persona 생성 전 동의 여부 검사 연결
-
         image_count = PersonaService._count_media(db, target_id, MediaType.IMAGE)
         voice_count = PersonaService._count_media(db, target_id, MediaType.VOICE)
+
+        consent_service.check_consent(db, user_id, target_id, ConsentType.PERSONA_CREATION)
+        if image_count > 0:
+            consent_service.check_consent(db, user_id, target_id, ConsentType.PHOTO_COLLECTION)
+        if voice_count > 0:
+            consent_service.check_consent(db, user_id, target_id, ConsentType.VOICE_COLLECTION)
+
         profile = await ai_service.generate_persona_profile(
             target_name=target.name,
             relationship=target.target_type,

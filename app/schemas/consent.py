@@ -7,7 +7,7 @@ from app.schemas.common import TimestampMixin
 
 
 class ConsentLogCreateRequest(BaseModel):
-    target_id: int
+    target_id: Optional[int] = None
     consent_type: ConsentType
     is_consented: bool
     details: Optional[str] = None

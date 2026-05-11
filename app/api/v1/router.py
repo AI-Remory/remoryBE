@@ -17,6 +17,4 @@ api_v1_router.include_router(sharing.router)
 api_v1_router.include_router(group.router)
 api_v1_router.include_router(deletion.router)
 api_v1_router.include_router(consent.router)
-# 다른 엔드포인트들은 나중에 추가할 것
-# api_v1_router.include_router(consent.router)
 
