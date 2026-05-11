@@ -11,6 +11,8 @@ class ConsentType(str, enum.Enum):
     PERSONA_CREATION = "persona_creation"  # 페르소나 생성
     DATA_USAGE = "data_usage"  # 데이터 사용
     AI_PROCESSING = "ai_processing"  # AI 처리
+    AI_RESPONSE_NOTICE = "ai_response_notice"  # AI 사용 응답 동의 완료
+    STORYBOOK_SHARE = "storybook_share" # 스토리북 공유 동의 완료 
 
 
 class ConsentLog(BaseModel):
