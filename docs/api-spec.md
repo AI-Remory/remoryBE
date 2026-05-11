@@ -1520,3 +1520,187 @@ Request Body: 없음
 Response: DeletionRequest response.
 
 Errors: `401`, `403`, `404`
+
+---
+
+## L. AI and Speech Pipeline
+
+This section summarizes the frontend-facing contract for the AI and voice features.
+Existing API paths and response schemas remain unchanged unless a new endpoint is listed here.
+
+### Provider Settings
+
+Configure providers with `.env` values. Do not commit real external API keys to GitHub.
+
+| Variable | Example | Notes |
+| --- | --- | --- |
+| `GEMINI_API_KEY` | `AIza...` | Required only for real Gemini calls. If empty, the backend uses mock LLM output. |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model used for persona replies, interview questions, and storybook generation. |
+| `STT_PROVIDER` | `mock` or `faster_whisper` | Speech-to-text provider. `test` always uses `mock`. |
+| `WHISPER_MODEL_SIZE` | `base` or `small` | faster-whisper model size. CPU mode is expected. |
+| `TTS_PROVIDER` | `mock` or `melotts` | Text-to-speech provider. `test` always uses `mock`. |
+| `VOICE_CLONE_PROVIDER` | `mock` or `openvoice` | Voice cloning provider. `test` always uses `mock`. |
+
+Provider fallback rules:
+
+- `ENVIRONMENT=test` always uses mock providers.
+- If `GEMINI_API_KEY` is missing, LLM calls use `MockLLMService`.
+- If Gemini fails or returns invalid storybook JSON, the backend falls back to mock output.
+- MeloTTS/OpenVoice imports are optional; missing packages must not crash the server.
+
+### PersonaChat Text Message
+
+- Method: `POST`
+- URL: `/api/v1/chats/{chat_id}/messages`
+- Auth: Yes
+- Content-Type: `application/json`
+- Description: Saves the user text message, generates a persona reply through `LLMService`, and optionally generates TTS audio for the persona reply.
+
+Request body:
+
+```json
+{
+  "message_type": "TEXT",
+  "content": "오늘 기분이 조금 복잡했어.",
+  "audio_file_path": null,
+  "generate_audio": false
+}
+```
+
+Notes:
+
+- `generate_audio` is optional and defaults to `false`.
+- When `generate_audio=true`, the backend calls `TTSService.synthesize(...)`.
+- The persona reply keeps `is_ai_generated=true`.
+- The LLM prompt includes persona name, speaking style, personality summary, memory summary, system prompt, recent messages, and the current user message.
+- Sensitive medical, legal, and financial advice is discouraged by the internal system prompt.
+
+Response:
+
+The existing `PersonaMessagePairResponse` is returned:
+
+- `user_message`: saved user message.
+- `persona_message`: saved persona reply.
+- `persona_message.audio_file_path`: `null` unless TTS generation was requested and succeeded.
+
+### PersonaChat Audio Message
+
+- Method: `POST`
+- URL: `/api/v1/chats/{chat_id}/audio`
+- Auth: Yes
+- Content-Type: `multipart/form-data`
+- Description: Uploads an audio file, transcribes it with `STTService`, saves the transcribed text as a user audio message, then generates a persona reply.
+
+Form fields:
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file` | file | Yes | MIME type must start with `audio/`. Otherwise the API returns `400`. |
+| `generate_audio` | boolean | No | If `true`, persona reply audio is generated through TTS. |
+
+Storage behavior:
+
+- Uploaded audio is stored under `uploads/chat_audio/{user_id}/`.
+- The user `PersonaMessage` is saved with `sender_type=USER`, `message_type=AUDIO`, `content=<STT text>`, and `audio_file_path=<saved audio path>`.
+- The persona reply is saved as a text message. If TTS is requested, its `audio_file_path` points to the generated audio file.
+
+Example request:
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/chats/{chat_id}/audio" \
+  -H "Authorization: Bearer <access_token>" \
+  -F "file=@voice.m4a;type=audio/mp4" \
+  -F "generate_audio=true"
+```
+
+### StoryBook Gemini Generation
+
+StoryBook creation and regeneration use `LLMService.generate_storybook(...)`.
+
+Affected endpoints:
+
+- `POST /api/v1/storybooks`
+- `POST /api/v1/storybooks/{storybook_id}/regenerate`
+
+The backend passes interview question/answer data and optional photo memory data to Gemini when available. Gemini is instructed to return JSON in this shape:
+
+```json
+{
+  "title": "...",
+  "summary": "...",
+  "chapters": [
+    {
+      "title": "...",
+      "summary": "...",
+      "content": "..."
+    }
+  ]
+}
+```
+
+Frontend contract:
+
+- Public request and response schemas are unchanged.
+- At least one chapter is guaranteed.
+- If Gemini fails or the JSON cannot be parsed, mock storybook content is used.
+
+### Persona Voice Profile
+
+Voice profile endpoints are available for the voice cloning MVP.
+
+#### Create Voice Profile
+
+- Method: `POST`
+- URL: `/api/v1/personas/{persona_id}/voice-profile`
+- Auth: Yes
+- Description: Creates or requests creation of a voice profile for the persona by using voice media attached to the persona target.
+
+Rules:
+
+- The authenticated user must own the persona.
+- The persona target must have at least one voice media item.
+- If no reference voice media exists, the API returns `400`.
+- In `ENVIRONMENT=test`, `MockVoiceCloneService` creates a `READY` profile immediately.
+- With a real OpenVoice provider, the profile can be created as `PENDING`.
+- Service-layer TODO checkpoints remain for target verification approval and explicit voice cloning consent logs.
+
+Example:
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/personas/{persona_id}/voice-profile" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+#### Get Voice Profile
+
+- Method: `GET`
+- URL: `/api/v1/personas/{persona_id}/voice-profile`
+- Auth: Yes
+- Description: Returns the current persona voice profile.
+
+Important response fields:
+
+```json
+{
+  "id": 1,
+  "persona_id": 1,
+  "target_id": 1,
+  "provider": "mock",
+  "model_name": null,
+  "status": "READY",
+  "reference_audio_count": 1,
+  "reference_audio_total_seconds": null,
+  "voice_profile_path": "uploads/voice_profiles/...",
+  "sample_audio_path": "uploads/voice_samples/...",
+  "error_message": null,
+  "created_at": "2026-05-12T00:00:00",
+  "updated_at": "2026-05-12T00:00:00"
+}
+```
+
+Supported statuses:
+
+- `PENDING`
+- `READY`
+- `FAILED`
+- `DISABLED`

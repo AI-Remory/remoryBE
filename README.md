@@ -244,3 +244,149 @@ MAX_UPLOAD_SIZE=52428800
 ## 기여
 
 개발 단계이므로 후에 업데이트 예정입니다.
+
+---
+
+## AI / Speech Pipeline Setup
+
+This backend includes AI and voice service interfaces for Gemini LLM, STT, TTS, and voice cloning.
+Frontend developers can use the API contracts without installing heavy local models when mock providers are enabled.
+
+### Install
+
+Run Python commands from the backend virtual environment:
+
+```powershell
+cd D:\IdeaProjects\remory\backend
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+The dependency file includes:
+
+- `google-genai` for Gemini.
+- `faster-whisper` for real STT.
+- MeloTTS/OpenVoice integrations are optional and lazy-loaded so the server can run without them.
+
+GPU is not required. faster-whisper should run in CPU mode for local development.
+
+### Environment Variables
+
+Add AI and voice settings to `.env`. Real external API keys must stay in `.env` only. Do not commit them to GitHub.
+
+```env
+# Gemini LLM
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
+
+# Speech-to-text
+STT_PROVIDER=mock
+WHISPER_MODEL_SIZE=base
+
+# Text-to-speech
+TTS_PROVIDER=mock
+
+# Voice cloning
+VOICE_CLONE_PROVIDER=mock
+```
+
+Provider options:
+
+| Variable | Values | Default local choice |
+| --- | --- | --- |
+| `STT_PROVIDER` | `mock`, `faster_whisper` | `mock` |
+| `WHISPER_MODEL_SIZE` | `base`, `small` | `base` |
+| `TTS_PROVIDER` | `mock`, `melotts` | `mock` |
+| `VOICE_CLONE_PROVIDER` | `mock`, `openvoice` | `mock` |
+
+`ENVIRONMENT=test` always forces mock providers. Tests should never require Gemini keys, faster-whisper model loading, MeloTTS, or OpenVoice.
+
+### Gemini Behavior
+
+Gemini is used by `GeminiLLMService` for:
+
+- PersonaChat persona replies.
+- AI interview question generation.
+- StoryBook and StoryChapter generation.
+
+Fallback behavior:
+
+- If `ENVIRONMENT=test`, mock LLM output is used.
+- If `GEMINI_API_KEY` is empty, mock LLM output is used.
+- If Gemini fails, the backend falls back to mock output.
+- StoryBook generation asks Gemini for JSON and falls back to mock storybook content if JSON parsing fails.
+
+### PersonaChat Text and Audio Flow
+
+Text message:
+
+- Endpoint: `POST /api/v1/chats/{chat_id}/messages`
+- Body can include `generate_audio: true`.
+- The backend saves the user text, generates a persona reply through LLM, and optionally creates persona reply audio through TTS.
+- Persona replies keep `is_ai_generated=true`.
+
+Audio message:
+
+- Endpoint: `POST /api/v1/chats/{chat_id}/audio`
+- Content-Type: `multipart/form-data`
+- Fields:
+  - `file`: required audio file. MIME type must start with `audio/`.
+  - `generate_audio`: optional boolean.
+- The backend stores the upload under `uploads/chat_audio/{user_id}/`, transcribes it with STT, saves the user message as `message_type=AUDIO`, then generates the persona reply.
+
+### StoryBook Flow
+
+StoryBook create and regenerate endpoints call the same LLM storybook generation path:
+
+- `POST /api/v1/storybooks`
+- `POST /api/v1/storybooks/{storybook_id}/regenerate`
+
+Gemini receives interview question/answer data and optional photo memory data. The expected internal generation shape is:
+
+```json
+{
+  "title": "...",
+  "summary": "...",
+  "chapters": [
+    {
+      "title": "...",
+      "summary": "...",
+      "content": "..."
+    }
+  ]
+}
+```
+
+The public response schema remains the API schema used by the existing StoryBook endpoints.
+
+### Voice Profile API
+
+Voice cloning MVP endpoints:
+
+- `POST /api/v1/personas/{persona_id}/voice-profile`
+- `GET /api/v1/personas/{persona_id}/voice-profile`
+
+Rules:
+
+- The logged-in user must own the persona.
+- The persona target must have reference voice media.
+- If no reference voice media exists, creation returns `400`.
+- In test/mock mode, profile creation immediately returns a `READY` profile.
+- Real OpenVoice execution is optional. Service-layer TODO checks remain for target verification approval and explicit voice cloning consent.
+
+Example:
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/personas/{persona_id}/voice-profile" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+### Useful Commands
+
+```powershell
+cd D:\IdeaProjects\remory\backend
+.\.venv\Scripts\activate
+pytest -v
+pytest tests/test_05_chat.py -v
+pytest tests/test_08_storybook.py -v
+```

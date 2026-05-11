@@ -189,3 +189,95 @@ pytest
 pytest -v
 pytest tests/test_08_storybook.py -v
 ```
+
+---
+
+## AI / Speech Pipeline Test Scenarios
+
+These scenarios document the expected behavior for Gemini, STT, TTS, and voice cloning.
+The automated test environment must not load real external AI models.
+
+### Provider Behavior in Tests
+
+Set `ENVIRONMENT=test` for automated tests.
+
+Expected behavior:
+
+- LLM uses `MockLLMService`.
+- STT uses `MockSTTService`.
+- TTS uses `MockTTSService`.
+- Voice cloning uses `MockVoiceCloneService`.
+- Gemini, faster-whisper, MeloTTS, and OpenVoice should not be called directly in tests.
+
+Recommended command:
+
+```powershell
+cd D:\IdeaProjects\remory\backend
+.\.venv\Scripts\activate
+pytest -v
+```
+
+### PersonaChat Text Flow
+
+1. Log in and create or fetch a persona chat.
+2. Send `POST /api/v1/chats/{chat_id}/messages` with a JSON body containing `content`.
+3. Confirm the user message is saved.
+4. Confirm the persona message is generated through `LLMService`.
+5. Confirm `persona_message.is_ai_generated` is `true`.
+6. Confirm existing response shape is unchanged.
+7. Send the same request with `"generate_audio": true`.
+8. Confirm `persona_message.audio_file_path` is present when TTS succeeds.
+
+### PersonaChat Audio STT Flow
+
+1. Log in as the chat owner.
+2. Send `POST /api/v1/chats/{chat_id}/audio` as `multipart/form-data`.
+3. Include `file` with an `audio/*` MIME type.
+4. Optionally include `generate_audio=true`.
+5. Confirm uploaded audio is stored under `uploads/chat_audio/{user_id}/`.
+6. Confirm `STTService.transcribe(...)` provides message text.
+7. Confirm the saved user message has:
+   - `sender_type=USER`
+   - `message_type=AUDIO`
+   - `content=<transcribed text>`
+   - `audio_file_path=<uploaded audio path>`
+8. Confirm the persona reply is generated from the transcribed text.
+9. Send a non-audio file and confirm the API returns `400`.
+
+### StoryBook Gemini Flow
+
+1. Create interview questions and answers.
+2. Call `POST /api/v1/storybooks`.
+3. Confirm the service passes question/answer data and optional photo memory data to `generate_storybook(...)`.
+4. Confirm the public response schema is unchanged.
+5. Confirm at least one chapter exists.
+6. In test mode, confirm mock storybook content is returned.
+7. For real Gemini runs, malformed or unparsable JSON should fall back to mock storybook content.
+8. Call `POST /api/v1/storybooks/{storybook_id}/regenerate` and confirm the same generation path is used.
+
+### Voice Profile API Flow
+
+1. Log in as the persona owner.
+2. Ensure the persona target has at least one voice media item.
+3. Call `POST /api/v1/personas/{persona_id}/voice-profile`.
+4. In test mode, confirm the created profile status is `READY`.
+5. Call `GET /api/v1/personas/{persona_id}/voice-profile`.
+6. Confirm the response includes provider, status, reference audio count, profile path, sample path, and timestamps.
+7. Try creating a profile with no reference voice media and confirm the API returns `400`.
+8. Try another user's persona and confirm access is rejected.
+
+### Manual Environment Checks
+
+Use these values for local mock-only development:
+
+```env
+ENVIRONMENT=development
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
+STT_PROVIDER=mock
+WHISPER_MODEL_SIZE=base
+TTS_PROVIDER=mock
+VOICE_CLONE_PROVIDER=mock
+```
+
+Use real providers only after installing their dependencies and setting required keys or model files.
