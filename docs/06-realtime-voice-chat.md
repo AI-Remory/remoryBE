@@ -2,158 +2,123 @@
 
 ## 목차
 
-- [WebSocket Endpoint](#websocket-endpoint)
+- [Endpoint](#endpoint)
 - [인증과 권한](#인증과-권한)
-- [Message Protocol](#message-protocol)
+- [Client Message](#client-message)
+- [Server Message](#server-message)
 - [처리 흐름](#처리-흐름)
-- [STT/TTS/VoiceClone](#sttttsvoiceclone)
-- [저장 규칙](#저장-규칙)
-- [제한사항](#제한사항)
+- [저장 경로](#저장-경로)
+- [제한값](#제한값)
 - [Frontend 예시](#frontend-예시)
-- [TODO](#todo)
 
-## WebSocket Endpoint
+## Endpoint
 
-```text
-WS /api/v1/ws/personas/{persona_id}/voice?token={access_token}
+```http
+WS /api/v1/ws/personas/{persona_id}/voice?token=<access_token>
 ```
 
-첫 구현은 초저지연 streaming이 아니라 chunked turn-taking이다.
-
-```text
-audio chunk 수신
-  -> end_utterance
-  -> STT
-  -> Gemini persona reply
-  -> TTS/VoiceClone
-  -> audio URL 반환
-```
+라우터는 `app/api/v1/endpoints/realtime_voice.py`, 핵심 로직은 `app/services/realtime_voice_service.py`에 있다.
 
 ## 인증과 권한
 
-- `token` query param으로 access JWT를 전달한다.
-- token이 없거나 유효하지 않으면 WebSocket을 close한다.
-- 인증된 사용자가 persona owner여야 한다.
-- `start` 처리 시 verification, consent, voice profile, usage/rate limit을 확인한다.
+- query string `token`은 access token이어야 한다.
+- token이 없거나 잘못되면 서버는 accept 전에 `WS_1008_POLICY_VIOLATION`으로 close한다.
+- persona는 현재 사용자 소유 target의 persona여야 한다.
 
-## Message Protocol
-
-Client -> Server:
-
-```json
-{"type": "start", "chat_id": 1}
-{"type": "audio_chunk", "data": "base64...", "mime_type": "audio/webm"}
-{"type": "end_utterance"}
-{"type": "stop"}
-```
-
-`chat_id`는 optional이다. 없으면 서버가 voice call용 persona chat을 만든다.
-
-Server -> Client:
-
-```json
-{"type": "session_started", "session_id": 1}
-{"type": "partial_transcript", "text": "..."}
-{"type": "final_transcript", "text": "..."}
-{"type": "persona_text", "text": "..."}
-{"type": "persona_audio", "audio_url": "...", "audio_file_path": "..."}
-{"type": "error", "message": "..."}
-{"type": "session_ended"}
-```
-
-`partial_transcript`는 추후 streaming STT 확장을 위해 예약돼 있다.
-
-## 처리 흐름
+## Client Message
 
 ### start
 
-1. `VoiceCallSession` 생성
-2. persona owner 확인
-3. target verification `APPROVED` 확인
-4. `voice_cloning_consent`와 `voice_upload_consent` active 확인
-5. `PersonaVoiceProfile.status == READY` 확인
-6. target voice media 존재 확인
-7. `RateLimitService`와 usage limit 확인
-8. `VOICE_CALL_STARTED` audit log 기록
-9. `session_started` event 전송
+```json
+{
+  "type": "start",
+  "chat_id": 1
+}
+```
+
+`chat_id`는 선택이다. 없으면 서버가 `Voice call` title의 chat을 만든다.
 
 ### audio_chunk
 
-1. base64 decode
-2. chunk 크기 제한 확인
-3. utterance당 chunk 수 제한 확인
-4. memory buffer에 누적
-5. 비정상 요청은 error event와 `ABNORMAL_REQUEST_BLOCKED` audit log로 처리
+```json
+{
+  "type": "audio_chunk",
+  "mime_type": "audio/webm",
+  "data": "base64-encoded-audio"
+}
+```
+
+`data`는 base64 문자열이다. 지원 확장자 매핑은 `audio/wav`, `audio/mpeg`, `audio/mp4`, 그 외 기본 `.webm`이다.
 
 ### end_utterance
 
-1. 누적 buffer를 `uploads/voices/call_inputs/{user_id}/`에 저장
-2. STT 실행
-3. USER `PersonaMessage` 저장
-4. Gemini persona 응답 생성
-5. PERSONA `PersonaMessage` 저장
-6. VoiceClone 우선 시도, 실패 시 TTS fallback
-7. 출력 음성을 `uploads/voices/call_outputs/{user_id}/`에 저장
-8. `final_transcript`, `persona_text`, `persona_audio` event 전송
-9. STT/voice generation usage count 증가
+```json
+{
+  "type": "end_utterance"
+}
+```
+
+서버가 현재 buffer를 STT -> LLM persona reply -> cloned voice/TTS 순서로 처리한다.
 
 ### stop
 
-1. session status를 `ENDED`로 변경
-2. `ended_at`, `total_duration_seconds` 저장
-3. voice call seconds usage 증가
-4. `VOICE_CALL_ENDED` audit log 기록
-5. `session_ended` event 전송
+```json
+{
+  "type": "stop"
+}
+```
 
-## STT/TTS/VoiceClone
+세션 종료 후 서버가 `session_ended`를 보내고 정상 close한다.
 
-서비스 파일:
+## Server Message
 
-- `app/services/stt_service.py`
-- `app/services/tts_service.py`
-- `app/services/voice_clone_service.py`
-- 실제 구현 export 위치: `app/services/speech/`
+| type | payload |
+| --- | --- |
+| `session_started` | `{ "type": "session_started", "session_id": 1 }` |
+| `final_transcript` | `{ "type": "final_transcript", "text": "..." }` |
+| `persona_text` | `{ "type": "persona_text", "text": "..." }` |
+| `persona_audio` | `{ "type": "persona_audio", "audio_url": "...", "audio_file_path": "..." }` |
+| `session_ended` | `{ "type": "session_ended" }` |
+| `error` | `{ "type": "error", "message": "..." }` |
 
-규칙:
+## 처리 흐름
 
-- provider 구조를 새로 분리하지 않는다.
-- 테스트 환경에서는 mock 결과를 반환한다.
-- 실제 모델 또는 외부 dependency가 없어도 서버가 죽지 않도록 fallback한다.
-- Gemini 실패 시 persona fallback text를 반환한다.
-- TTS/VoiceClone 실패 시 `persona_text`는 반환하고 `persona_audio`는 `null`일 수 있다.
+1. `start` 수신: 사용자/사용량/persona 권한 확인, chat resolve, `VoiceCallSession` 생성, audit log 기록.
+2. `audio_chunk` 수신: base64 decode, chunk 크기/개수 검증, buffer에 append.
+3. `end_utterance` 수신: utterance rate limit 확인, STT/voice generation 한도 확인, input file 저장, 사용자 message 저장, persona reply 생성, voice clone 또는 TTS 출력 저장, persona message 저장.
+4. `stop` 수신 또는 disconnect: session 종료, duration 계산, voice call usage 반영, audit log 기록.
 
-## 저장 규칙
+## 저장 경로
 
-사용자 음성 message:
+`Settings.UPLOAD_DIR` 기준:
 
-- `sender_type = USER`
-- `message_type = AUDIO`
-- `content = STT 결과 텍스트`
-- `audio_file_path = 입력 음성 파일 경로`
+| 파일 | 경로 |
+| --- | --- |
+| 입력 음성 | `uploads/voices/call_inputs/{user_id}/input_*.webm|wav|mp3|m4a` |
+| 출력 음성 | `uploads/voices/call_outputs/{user_id}/output_*.wav` |
 
-Persona 응답 message:
+REST chat audio endpoint는 별도 endpoint인 `POST /api/v1/chats/{chat_id}/audio`를 사용한다.
 
-- `sender_type = PERSONA`
-- `message_type = AUDIO`
-- `content = Gemini 응답 텍스트`
-- `audio_file_path = 생성 음성 파일 경로`
-- `is_ai_generated = true`
+## 제한값
 
-## 제한사항
+`app/core/settings.py` 기준:
 
-- 현재는 utterance 단위 처리이며 실시간 partial STT는 아직 없다.
-- audio chunk는 base64 JSON message로 전달한다.
-- 로컬 `uploads` storage를 유지한다.
-- per-user active WebSocket 연결 수 제한이 있다.
-- per-utterance chunk size/count 제한이 있다.
-- per-minute utterance 제한이 있다.
-- monthly STT, voice generation, persona voice generation, voice call seconds limit이 있다.
+| 설정 | 기본값 | 의미 |
+| --- | --- | --- |
+| `VOICE_WS_MAX_ACTIVE_CONNECTIONS_PER_USER` | `2` | 사용자별 동시 WebSocket |
+| `VOICE_WS_MAX_UTTERANCES_PER_MINUTE` | `20` | 분당 utterance |
+| `VOICE_WS_MAX_CHUNK_BYTES` | `262144` | chunk bytes |
+| `VOICE_WS_MAX_CHUNKS_PER_UTTERANCE` | `100` | utterance별 chunk 수 |
+| `MONTHLY_USER_STT_REQUEST_LIMIT` | `500` | 월 STT 요청 |
+| `MONTHLY_USER_VOICE_GENERATION_LIMIT` | `1000` | 월 음성 생성 |
+| `MONTHLY_PERSONA_VOICE_GENERATION_LIMIT` | `500` | persona별 월 음성 생성 |
+| `MONTHLY_USER_VOICE_CALL_SECONDS_LIMIT` | `3600` | 월 음성 통화 초 |
 
 ## Frontend 예시
 
 ```ts
 const ws = new WebSocket(
-  `ws://localhost:8000/api/v1/ws/personas/${personaId}/voice?token=${accessToken}`
+  `ws://localhost:8000/api/v1/ws/personas/${personaId}/voice?token=${accessToken}`,
 );
 
 ws.onopen = () => {
@@ -162,30 +127,26 @@ ws.onopen = () => {
 
 ws.onmessage = (event) => {
   const message = JSON.parse(event.data);
-  if (message.type === "persona_audio" && message.audio_url) {
-    new Audio(message.audio_url).play();
-  }
+  if (message.type === "final_transcript") renderTranscript(message.text);
+  if (message.type === "persona_text") renderPersonaText(message.text);
+  if (message.type === "persona_audio" && message.audio_url) playAudio(message.audio_url);
+  if (message.type === "error") showError(message.message);
 };
 
-function sendAudioBlob(blob: Blob) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    const base64 = String(reader.result).split(",")[1];
-    ws.send(JSON.stringify({ type: "audio_chunk", data: base64, mime_type: blob.type }));
-    ws.send(JSON.stringify({ type: "end_utterance" }));
-  };
-  reader.readAsDataURL(blob);
+function sendChunk(bytes: Uint8Array, mimeType = "audio/webm") {
+  const binary = Array.from(bytes, (b) => String.fromCharCode(b)).join("");
+  ws.send(JSON.stringify({
+    type: "audio_chunk",
+    mime_type: mimeType,
+    data: btoa(binary),
+  }));
 }
 
-function stopCall() {
+function endUtterance() {
+  ws.send(JSON.stringify({ type: "end_utterance" }));
+}
+
+function stop() {
   ws.send(JSON.stringify({ type: "stop" }));
 }
 ```
-
-## TODO
-
-- `transcribe_stream(...)` 추가
-- `partial_transcript` 실시간 전송
-- `synthesize_stream(...)` 또는 audio chunk response 추가
-- browser MediaRecorder chunk 크기 튜닝
-- reconnect 정책과 session resume 정책 설계

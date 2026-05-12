@@ -4,158 +4,87 @@
 
 - [Pytest 실행](#pytest-실행)
 - [테스트 환경](#테스트-환경)
-- [API 테스트 순서](#api-테스트-순서)
-- [데모 시나리오](#데모-시나리오)
-- [GitHub Actions](#github-actions)
+- [테스트 파일](#테스트-파일)
+- [대표 API 시나리오](#대표-api-시나리오)
 - [수동 점검](#수동-점검)
 
 ## Pytest 실행
 
-전체 테스트:
-
-```powershell
-cd D:\IdeaProjects\remory\backend
-.\.venv\Scripts\activate
-pytest -v
+```bash
+pytest
 ```
 
-일부 테스트:
+특정 파일:
 
-```powershell
-pytest tests/test_01_auth.py -v
-pytest tests/test_05_chat.py -v
-pytest tests/test_19_realtime_voice.py -v
-```
-
-마이그레이션 확인:
-
-```powershell
-alembic upgrade head
+```bash
+pytest tests/test_01_auth.py
+pytest tests/test_19_realtime_voice.py
 ```
 
 ## 테스트 환경
 
-- Test runner: `pytest`
-- Client: FastAPI `TestClient`
-- DB: in-memory SQLite
-- AI: `MockLLMService`
-- STT: `MockSTTService`
-- TTS: `MockTTSService`
-- VoiceClone: `MockVoiceCloneService`
-- Upload cleanup: 테스트 전후 `uploads/` 하위 테스트 산출물 정리
+`tests/conftest.py`는 `app.core.database.get_db`를 SQLite in-memory DB로 override한다. 테스트마다 `Base.metadata.create_all`/`drop_all`을 수행하므로 MySQL 없이 실행된다.
 
-테스트에서는 Gemini, faster-whisper, MeloTTS, OpenVoice가 직접 호출되면 안 된다.
+업로드 테스트는 다음 디렉터리를 정리한다.
 
-## API 테스트 순서
+```text
+uploads/images
+uploads/voices
+uploads/photo_memories
+uploads/verifications
+uploads/chat_audio
+uploads/chat_tts
+```
 
-권장 end-to-end 순서:
+## 테스트 파일
 
-1. `GET /health`
-2. `POST /api/v1/auth/register`
-3. `POST /api/v1/auth/login`
-4. `GET /api/v1/auth/me`
-5. `POST /api/v1/targets`
-6. `POST /api/v1/consents`
-7. `POST /api/v1/targets/{target_id}/verification-requests`
-8. Admin `PATCH /api/v1/admin/verification-requests/{request_id}/approve`
-9. `POST /api/v1/targets/{target_id}/media`
-10. `POST /api/v1/targets/{target_id}/persona`
-11. `POST /api/v1/personas/{persona_id}/voice-profile`
-12. `POST /api/v1/personas/{persona_id}/voice-profile/evaluate`
-13. `PATCH /api/v1/personas/{persona_id}/voice-profile/user-confirm`
-14. `POST /api/v1/personas/{persona_id}/chats`
-15. `POST /api/v1/chats/{chat_id}/messages`
-16. `POST /api/v1/chats/{chat_id}/audio`
-17. `WS /api/v1/ws/personas/{persona_id}/voice`
-18. `POST /api/v1/interviews`
-19. `POST /api/v1/interviews/{session_id}/questions`
-20. `POST /api/v1/interviews/{session_id}/answers`
-21. `POST /api/v1/photo-memories`
-22. `POST /api/v1/storybooks`
-23. `POST /api/v1/storybooks/{storybook_id}/share-links`
-24. `GET /api/v1/share/{token}`
-25. `POST /api/v1/groups`
-26. `POST /api/v1/groups/{group_id}/members`
-27. `POST /api/v1/groups/{group_id}/storybooks/{storybook_id}`
-28. `POST /api/v1/deletion-requests`
-29. Admin report/audit/usage/rate-limit checks
+| 파일 | 범위 |
+| --- | --- |
+| `test_00_health.py` | `/health` |
+| `test_01_auth.py` | register/login/me/refresh/logout |
+| `test_02_target.py` | target CRUD |
+| `test_03_consent.py`, `test_03_media.py` | consent, target media |
+| `test_04_persona.py` | persona, voice profile |
+| `test_05_chat.py` | chat/message/audio |
+| `test_06_interview.py` | interview session/question/answer |
+| `test_07_photo_memory.py` | photo memory |
+| `test_08_storybook.py` | storybook/chapter |
+| `test_09_share_group.py` | share link, group |
+| `test_10_deletion.py` | deletion request |
+| `test_11_consent_log.py`, `test_11_verification.py` | consent log, verification |
+| `test_12_stt_service.py` - `test_14_voice_clone_service.py` | speech services |
+| `test_15_audit_log.py` | audit log |
+| `test_16_rate_limit.py` | usage/rate limit |
+| `test_17_report.py` | report |
+| `test_18_voice_profile_quality.py` | voice profile quality |
+| `test_19_realtime_voice.py` | realtime voice WebSocket |
 
-## 데모 시나리오
+## 대표 API 시나리오
 
-### Persona 생성 데모
-
-1. 사용자 회원가입/로그인
-2. "Mom" target 생성
-3. 필수 consent 생성
-4. verification 문서 제출
-5. admin 승인
-6. 사진과 음성 media 업로드
-7. persona 생성
-8. persona 상세와 status 확인
-
-### Chat/Voice 데모
-
-1. persona chat 생성
-2. 텍스트 메시지 전송
-3. persona reply와 `is_ai_generated=true` 확인
-4. 음성 파일 업로드
-5. STT 결과가 USER `PersonaMessage.content`로 저장되는지 확인
-6. voice profile READY/user-confirm 후 `generate_audio=true`로 audio path 확인
-7. WebSocket voice chat에서 `session_started`, `final_transcript`, `persona_text`, `persona_audio`, `session_ended` 확인
-
-### StoryBook/Share 데모
-
-1. interview session 생성
-2. 질문 생성과 답변 저장
-3. storybook 생성
-4. chapter 목록 확인
-5. share consent 생성
-6. share link 생성
-7. public share URL 조회
-8. share link 비활성화 후 접근 차단 확인
-
-### Deletion 데모
-
-1. photo memory 또는 target media 생성
-2. deletion request 생성
-3. 파일 삭제와 DB 상태 변경 확인
-4. deletion request 목록/상세 확인
-5. audit log 확인
-
-## GitHub Actions
-
-Workflow: `.github/workflows/backend-test.yml`
-
-동작:
-
-1. `main`, `develop` push/pull_request에서 실행
-2. Ubuntu runner 사용
-3. MySQL 8.0 service container 실행
-4. Python 3.12 설치
-5. `pip install -r requirements.txt`
-6. `.env` 생성
-7. `alembic upgrade head`
-8. `pytest -v`
-
-확인할 것:
-
-- MySQL service health check가 통과하는지
-- `.env`의 DB 계정과 workflow service 계정이 일치하는지
-- migration head가 하나인지
-- mock provider 설정으로 외부 AI dependency가 필요 없는지
+1. `POST /api/v1/auth/register`로 사용자와 token 생성.
+2. `POST /api/v1/targets`로 target 생성.
+3. `POST /api/v1/consents`로 photo/voice/persona 관련 consent 생성.
+4. `POST /api/v1/targets/{target_id}/media`로 image/voice 업로드.
+5. 테스트 fixture 또는 admin API로 verification 승인 상태 준비.
+6. `POST /api/v1/targets/{target_id}/persona`로 persona 생성.
+7. `POST /api/v1/personas/{persona_id}/chats`와 `POST /api/v1/chats/{chat_id}/messages`로 대화 검증.
+8. `POST /api/v1/interviews`, question/answer 생성 후 `POST /api/v1/storybooks`.
+9. `POST /api/v1/storybooks/{storybook_id}/share-links` 후 `GET /api/v1/share/{token}` 확인.
+10. admin token으로 `/api/v1/admin/*` 권한 API 확인.
 
 ## 수동 점검
 
-릴리스 전 최소 확인:
-
-```powershell
-alembic heads
-alembic upgrade head
-pytest -v
-python -m uvicorn app.main:app --reload --port 8000
+```bash
+curl http://localhost:8000/health
+curl http://localhost:8000/docs
 ```
 
-브라우저 확인:
+환경 변수 문제를 배포 전에 확인한다.
 
-- `http://localhost:8000/health`
-- `http://localhost:8000/docs`
+```bash
+grep -E "^[A-Z_]+=" .env.example | cut -d= -f1 | sort > /tmp/env_example_keys.txt
+grep -E "^[A-Z_]+=" .env | cut -d= -f1 | sort > /tmp/env_keys.txt
+comm -13 /tmp/env_example_keys.txt /tmp/env_keys.txt
+```
+
+출력된 키는 현재 `Settings`에 없는 값이므로 제거한다.

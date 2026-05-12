@@ -5,210 +5,205 @@
 - [목표](#목표)
 - [로컬 개발 환경](#로컬-개발-환경)
 - [환경 변수](#환경-변수)
+- [.env 동기화 확인](#env-동기화-확인)
 - [MySQL](#mysql)
 - [Alembic](#alembic)
+- [Uploads](#uploads)
 - [서버 실행](#서버-실행)
 - [Pytest](#pytest)
-- [AI/Speech 설정](#aispeech-설정)
 - [자주 나는 오류](#자주-나는-오류)
 
 ## 목표
 
-이 문서는 Remory 백엔드를 로컬에서 실행하고 테스트하기 위한 설정 절차를 정리한다. API 상세는 [02-backend-api.md](02-backend-api.md), 프론트 연동은 [03-frontend-integration.md](03-frontend-integration.md)를 본다.
+Remory 백엔드를 로컬에서 실행하고 테스트하기 위한 절차다. API 상세는 [02-backend-api.md](02-backend-api.md), 배포는 [08-deployment.md](08-deployment.md)를 기준으로 한다.
 
 ## 로컬 개발 환경
 
-권장 환경:
+| 항목 | 기준 |
+| --- | --- |
+| Python | 3.12 권장. 현재 로컬 venv는 `python3.12` 구조다. |
+| 패키지 | `requirements.txt` |
+| DB | MySQL + PyMySQL |
+| 실행 앱 | `app.main:app` |
+| 테스트 DB | pytest fixture의 SQLite in-memory |
 
-- Python 3.12
-- MySQL 8.x
-- Windows PowerShell 또는 Linux/macOS shell
-- FastAPI 개발 서버: Uvicorn
-
-설치:
-
-```powershell
-cd D:\IdeaProjects\remory\backend
+```bash
 python -m venv .venv
-.\.venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-macOS/Linux:
+Windows PowerShell:
 
-```bash
-cd /path/to/remory/backend
-python3 -m venv .venv
-source .venv/bin/activate
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
 ## 환경 변수
 
-`.env.example`을 복사해 `.env`를 만든다.
+`.env`는 `.env.example`을 복사해서 만든다. `app/core/settings.py::Settings`에 없는 키가 `.env`에 있으면 pydantic-settings가 `ValidationError: Extra inputs are not permitted`를 발생시킨다.
+
+```bash
+cp .env.example .env
+```
+
+PowerShell:
 
 ```powershell
-copy .env.example .env
+Copy-Item .env.example .env
 ```
 
-핵심 설정:
+| 변수 | 기본값 | 설명 |
+| --- | --- | --- |
+| `APP_NAME` | `Remory API` | FastAPI title |
+| `DEBUG` | `True` | local reload/debug 기준. 운영은 `False` |
+| `ENVIRONMENT` | `development` | 환경 구분 문자열 |
+| `MYSQL_USER` | `remory` | MySQL 사용자 |
+| `MYSQL_PASSWORD` | `password` | MySQL 비밀번호 |
+| `MYSQL_HOST` | `localhost` | MySQL host |
+| `MYSQL_PORT` | `3306` | MySQL port |
+| `MYSQL_DB` | `remory_db` | MySQL database |
+| `SECRET_KEY` | 개발용 문자열 | JWT 서명 키. 운영 필수 교체 |
+| `ALGORITHM` | `HS256` | JWT 알고리즘 |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | access token 만료 분 |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `14` | refresh token 만료 일 |
+| `CORS_ORIGINS` | localhost 5173/3000 | JSON 배열 문자열 |
+| `GEMINI_API_KEY` | 빈 문자열 | Gemini API key |
+| `GEMINI_MODEL` | `gemini-2.0-flash` | Gemini model |
+| `STT_PROVIDER` | `mock` | STT provider |
+| `WHISPER_MODEL_SIZE` | `base` | whisper model size |
+| `TTS_PROVIDER` | `mock` | TTS provider |
+| `VOICE_CLONE_PROVIDER` | `mock` | voice clone provider |
+| `OPENVOICE_CHECKPOINT_PATH` | 빈 문자열 | OpenVoice checkpoint path |
+| `VOICE_SAMPLE_MIN_COUNT` | `1` | voice profile 최소 샘플 수 |
+| `VOICE_SAMPLE_MIN_TOTAL_DURATION_MS` | `100` | voice profile 최소 총 길이 |
+| `VOICE_SAMPLE_MIN_FILE_SIZE_BYTES` | `1024` | voice sample 최소 파일 크기 |
+| `VOICE_PROFILE_MIN_QUALITY_SCORE` | `0.5` | voice profile 최소 품질 점수 |
+| `UPLOAD_DIR` | `./uploads` | 업로드 루트 |
+| `MAX_UPLOAD_SIZE` | `52428800` | 파일 최대 크기, 50MB |
+| `MONTHLY_USER_VOICE_GENERATION_LIMIT` | `1000` | 사용자 월 음성 생성 한도 |
+| `MONTHLY_PERSONA_VOICE_GENERATION_LIMIT` | `500` | persona 월 음성 생성 한도 |
+| `MONTHLY_USER_STT_REQUEST_LIMIT` | `500` | 사용자 월 STT 요청 한도 |
+| `MONTHLY_USER_VOICE_CALL_SECONDS_LIMIT` | `3600` | 사용자 월 음성 통화 초 |
+| `RATE_LIMIT_REQUESTS_PER_MINUTE_DEFAULT` | `60` | 일반 endpoint 분당 요청 제한 |
+| `RATE_LIMIT_REQUESTS_PER_MINUTE_VOICE` | `10` | 음성 endpoint 분당 요청 제한 |
+| `VOICE_WS_MAX_ACTIVE_CONNECTIONS_PER_USER` | `2` | 사용자별 WebSocket 동시 연결 |
+| `VOICE_WS_MAX_UTTERANCES_PER_MINUTE` | `20` | WebSocket 분당 utterance |
+| `VOICE_WS_MAX_CHUNK_BYTES` | `262144` | WebSocket chunk 최대 bytes |
+| `VOICE_WS_MAX_CHUNKS_PER_UTTERANCE` | `100` | utterance당 chunk 수 |
 
-```env
-APP_NAME=Remory API
-DEBUG=True
-ENVIRONMENT=development
+`RATE_LIMIT_PER_MINUTE_DEFAULT`, `RATE_LIMIT_PER_MINUTE_VOICE`는 현재 `Settings`에 없는 키이므로 `.env`에 넣지 않는다.
 
-MYSQL_USER=remory
-MYSQL_PASSWORD=password
-MYSQL_HOST=localhost
-MYSQL_PORT=3306
-MYSQL_DB=remory_db
+## .env 동기화 확인
 
-SECRET_KEY=change-this-in-production
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-REFRESH_TOKEN_EXPIRE_DAYS=14
+Linux/macOS:
 
-CORS_ORIGINS=["http://localhost:5173","http://localhost:3000"]
-
-UPLOAD_DIR=./uploads
-MAX_UPLOAD_SIZE=52428800
-
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.0-flash
-STT_PROVIDER=mock
-WHISPER_MODEL_SIZE=base
-TTS_PROVIDER=mock
-VOICE_CLONE_PROVIDER=mock
+```bash
+grep -E "^[A-Z_]+=" .env.example | cut -d= -f1 | sort > /tmp/env_example_keys.txt
+grep -E "^[A-Z_]+=" .env | cut -d= -f1 | sort > /tmp/env_keys.txt
+comm -23 /tmp/env_example_keys.txt /tmp/env_keys.txt
+comm -13 /tmp/env_example_keys.txt /tmp/env_keys.txt
 ```
 
-주의:
+첫 번째 `comm`은 `.env.example`에는 있지만 `.env`에는 없는 키, 두 번째 `comm`은 `.env`에만 있는 키다. 두 번째 출력이 있으면 Alembic/FastAPI 시작 전에 제거한다.
 
-- `.env`는 커밋하지 않는다.
-- 실제 Gemini 키, 운영 JWT secret, DB 비밀번호는 `.env` 또는 서버 secret으로만 관리한다.
-- 테스트 환경에서는 `ENVIRONMENT=test`가 mock LLM/STT/TTS/VoiceClone을 강제한다.
+PowerShell:
+
+```powershell
+$example = Select-String -Path .env.example -Pattern '^[A-Z_]+=' | ForEach-Object { ($_ -split '=')[0] } | Sort-Object
+$envKeys = Select-String -Path .env -Pattern '^[A-Z_]+=' | ForEach-Object { ($_ -split '=')[0] } | Sort-Object
+Compare-Object $example $envKeys
+```
 
 ## MySQL
 
-로컬 MySQL 실행 후 데이터베이스와 사용자를 만든다.
-
 ```sql
 CREATE DATABASE remory_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'remory'@'localhost' IDENTIFIED BY 'password';
-GRANT ALL PRIVILEGES ON remory_db.* TO 'remory'@'localhost';
+CREATE USER 'remory'@'%' IDENTIFIED BY 'change-me';
+GRANT ALL PRIVILEGES ON remory_db.* TO 'remory'@'%';
 FLUSH PRIVILEGES;
 ```
 
-Windows에서 MySQL 서비스가 내려가 있으면 서비스 앱 또는 PowerShell에서 MySQL 서비스를 시작한다. Linux에서는 일반적으로 다음 명령을 사용한다.
+`app/core/settings.py`의 `DATABASE_URL`은 다음 형태로 생성된다.
 
-```bash
-sudo systemctl start mysql
+```text
+mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}?charset=utf8mb4
 ```
 
 ## Alembic
 
-마이그레이션 적용:
-
-```powershell
-alembic upgrade head
-```
-
-상태 확인:
-
-```powershell
+```bash
 alembic current
-alembic heads
-```
-
-모델 변경 시:
-
-```powershell
-alembic revision --autogenerate -m "describe schema change"
 alembic upgrade head
 ```
 
-마이그레이션 파일은 `migrations/versions/`에 생성되며 코드 변경과 함께 커밋해야 한다.
+마이그레이션 파일은 `migrations/versions`에 있다. 로컬 초기화 시 새 migration을 만들지 말고 기존 revision을 적용한다.
+
+## Uploads
+
+테스트 fixture와 서비스가 사용하는 업로드 하위 디렉터리를 미리 만든다.
+
+```bash
+mkdir -p uploads/images uploads/voices uploads/photo_memories uploads/verifications uploads/chat_audio uploads/chat_tts
+```
+
+PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force uploads\images, uploads\voices, uploads\photo_memories, uploads\verifications, uploads\chat_audio, uploads\chat_tts
+```
 
 ## 서버 실행
 
-개발 서버:
-
-```powershell
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```bash
+uvicorn app.main:app --reload
 ```
 
-대체 실행:
+기본 확인:
 
-```powershell
-python app/main.py
+```bash
+curl http://localhost:8000/health
+curl http://localhost:8000/docs
 ```
-
-확인:
-
-- Health: `http://localhost:8000/health`
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
 
 ## Pytest
 
-전체 테스트:
-
-```powershell
-pytest -v
+```bash
+pytest
 ```
 
-일부 테스트:
-
-```powershell
-pytest tests/test_05_chat.py -v
-pytest tests/test_19_realtime_voice.py -v
-```
-
-테스트는 FastAPI `TestClient`, in-memory SQLite, mock AI/Speech 서비스를 사용한다. 테스트 전후로 `uploads/images`, `uploads/voices`, `uploads/photo_memories`, `uploads/verifications`, `uploads/chat_audio`, `uploads/chat_tts` 산출물을 정리한다.
-
-## AI/Speech 설정
-
-로컬 개발 기본값은 mock provider다.
-
-| Variable | Values | Local default |
-| --- | --- | --- |
-| `GEMINI_API_KEY` | Gemini API key | empty means mock LLM |
-| `GEMINI_MODEL` | Gemini model name | `gemini-2.0-flash` |
-| `STT_PROVIDER` | `mock`, `faster_whisper` | `mock` |
-| `TTS_PROVIDER` | `mock`, `melotts` | `mock` |
-| `VOICE_CLONE_PROVIDER` | `mock`, `openvoice` | `mock` |
-
-MeloTTS/OpenVoice/faster-whisper는 lazy import와 fallback을 사용한다. 모델이나 패키지가 없어도 서버 시작이 실패하지 않아야 한다.
+테스트는 `tests/conftest.py`에서 FastAPI dependency를 SQLite in-memory DB로 override한다. 실제 MySQL 연결 없이 API 테스트를 실행한다.
 
 ## 자주 나는 오류
 
+### pydantic Settings ValidationError
+
+원인: `.env`에 `Settings`가 모르는 키가 있다. 예: `RATE_LIMIT_PER_MINUTE_DEFAULT`, `RATE_LIMIT_PER_MINUTE_VOICE`.
+
+해결:
+
+```bash
+grep -E "^[A-Z_]+=" .env.example | cut -d= -f1 | sort > /tmp/env_example_keys.txt
+grep -E "^[A-Z_]+=" .env | cut -d= -f1 | sort > /tmp/env_keys.txt
+comm -13 /tmp/env_example_keys.txt /tmp/env_keys.txt
+```
+
+출력된 키를 `.env`에서 제거하고 다시 `alembic current`를 실행한다.
+
 ### MySQL 연결 실패
 
-- MySQL 서버가 실행 중인지 확인한다.
-- `.env`의 `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DB`를 확인한다.
-- DB와 사용자 권한이 생성됐는지 확인한다.
+`.env`의 `MYSQL_*` 값, MySQL 계정 권한, DB 생성 여부를 확인한다.
 
-### 포트 충돌
+### CORS 오류
 
-```powershell
-python -m uvicorn app.main:app --reload --port 8001
-```
+프론트 origin을 `CORS_ORIGINS` JSON 배열 문자열에 추가한다. 예: `["https://app.example.com"]`.
 
-### 모듈 import 오류
+### 업로드 실패
 
-```powershell
-.\.venv\Scripts\activate
-pip install --upgrade -r requirements.txt
-```
+`UPLOAD_DIR` 하위 디렉터리가 존재하고 서버 프로세스가 쓸 수 있는지 확인한다.
 
-### Alembic 오류
+### 401 Unauthorized
 
-- `alembic heads`가 하나인지 확인한다.
-- DB 접속 권한을 확인한다.
-- 모델만 바꾸고 migration을 누락하지 않았는지 확인한다.
-
-### Pytest 실패
-
-- 가상환경이 활성화됐는지 확인한다.
-- `pytest -v`로 상세 로그를 본다.
-- 실패가 업로드 파일 잔여물 때문이면 `uploads/` 하위 테스트 산출물을 정리한다.
+`Authorization: Bearer <access_token>` 헤더가 누락되었거나 access token이 만료된 상태다. `/api/v1/auth/refresh-token`으로 token pair를 갱신한다.

@@ -3,135 +3,117 @@
 ## 목차
 
 - [기준 환경](#기준-환경)
-- [Vultr/Ubuntu 초기 설정](#vultrubuntu-초기-설정)
+- [서버 준비](#서버-준비)
 - [MySQL](#mysql)
 - [프로젝트 배포](#프로젝트-배포)
+- [.env 검증](#env-검증)
 - [Alembic](#alembic)
 - [systemd](#systemd)
 - [Nginx](#nginx)
-- [CORS](#cors)
-- [GitHub Actions](#github-actions)
 - [배포 체크리스트](#배포-체크리스트)
 - [자주 발생한 오류](#자주-발생한-오류)
 
 ## 기준 환경
 
-- Vultr VPS
-- Ubuntu 22.04 또는 24.04
-- Python 3.12
-- MySQL 8.x
-- Nginx
-- systemd
-- Uvicorn
+| 항목 | 기준 |
+| --- | --- |
+| OS | Ubuntu 계열 서버 |
+| Python | 3.12 권장 |
+| App | FastAPI `app.main:app` |
+| DB | MySQL |
+| Process | systemd + uvicorn |
+| Reverse proxy | Nginx |
 
-## Vultr/Ubuntu 초기 설정
+## 서버 준비
 
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-venv python3-pip mysql-server nginx git
+sudo apt install -y python3 python3-venv python3-pip mysql-client nginx git
 ```
 
-앱 사용자 생성:
+프로젝트를 배포할 계정과 디렉터리를 준비한다.
 
 ```bash
-sudo adduser remory
-sudo usermod -aG sudo remory
-```
-
-프로젝트 위치 예시:
-
-```text
-/srv/remory/backend
+sudo mkdir -p /opt/remory/backend
+sudo chown -R $USER:$USER /opt/remory
 ```
 
 ## MySQL
 
-```bash
-sudo systemctl enable mysql
-sudo systemctl start mysql
-sudo mysql
-```
-
 ```sql
 CREATE DATABASE remory_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'remory'@'localhost' IDENTIFIED BY 'strong-password';
-GRANT ALL PRIVILEGES ON remory_db.* TO 'remory'@'localhost';
+CREATE USER 'remory'@'%' IDENTIFIED BY 'strong-password';
+GRANT ALL PRIVILEGES ON remory_db.* TO 'remory'@'%';
 FLUSH PRIVILEGES;
 ```
+
+운영 `.env`의 `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DB`와 일치해야 한다.
 
 ## 프로젝트 배포
 
 ```bash
-cd /srv
-sudo git clone <repo-url> remory
-sudo chown -R remory:remory /srv/remory
-cd /srv/remory/backend
+cd /opt/remory/backend
 python3 -m venv .venv
 source .venv/bin/activate
-pip install --upgrade pip
 pip install -r requirements.txt
+cp .env.example .env
+mkdir -p uploads/images uploads/voices uploads/photo_memories uploads/verifications uploads/chat_audio uploads/chat_tts
 ```
 
-운영 `.env` 예시:
+운영 `.env`에서 최소한 다음은 반드시 변경한다.
 
-```env
-APP_NAME=Remory API
-DEBUG=False
-ENVIRONMENT=production
+| 변수 | 운영 기준 |
+| --- | --- |
+| `DEBUG` | `False` |
+| `ENVIRONMENT` | `production` 또는 `staging` |
+| `MYSQL_*` | 실제 DB 접속 정보 |
+| `SECRET_KEY` | 긴 난수 문자열 |
+| `CORS_ORIGINS` | 실제 frontend origin |
+| `UPLOAD_DIR` | 서버 프로세스가 쓰기 가능한 경로 |
+| `GEMINI_API_KEY` | 실제 AI 기능 사용 시 설정 |
 
-MYSQL_USER=remory
-MYSQL_PASSWORD=strong-password
-MYSQL_HOST=localhost
-MYSQL_PORT=3306
-MYSQL_DB=remory_db
+## .env 검증
 
-SECRET_KEY=replace-with-long-random-secret
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-REFRESH_TOKEN_EXPIRE_DAYS=14
+Alembic과 FastAPI는 `Settings`를 import한다. `.env`에 `app/core/settings.py::Settings`가 모르는 키가 있으면 `pydantic_settings ValidationError: Extra inputs are not permitted`가 발생한다.
 
-CORS_ORIGINS=["https://your-frontend-domain.com"]
+배포 전에 반드시 실행한다.
 
-UPLOAD_DIR=./uploads
-MAX_UPLOAD_SIZE=52428800
-
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.0-flash
-STT_PROVIDER=mock
-TTS_PROVIDER=mock
-VOICE_CLONE_PROVIDER=mock
+```bash
+grep -E "^[A-Z_]+=" .env.example | cut -d= -f1 | sort > /tmp/env_example_keys.txt
+grep -E "^[A-Z_]+=" .env | cut -d= -f1 | sort > /tmp/env_keys.txt
+comm -23 /tmp/env_example_keys.txt /tmp/env_keys.txt
+comm -13 /tmp/env_example_keys.txt /tmp/env_keys.txt
 ```
+
+첫 번째 출력은 `.env`에 빠진 키다. 두 번째 출력은 `.env`에만 있는 키다. 두 번째 출력에 `RATE_LIMIT_PER_MINUTE_DEFAULT`, `RATE_LIMIT_PER_MINUTE_VOICE` 같은 값이 있으면 현재 코드가 허용하지 않으므로 제거한다.
+
+현재 허용되는 rate limit 키는 `RATE_LIMIT_REQUESTS_PER_MINUTE_DEFAULT`, `RATE_LIMIT_REQUESTS_PER_MINUTE_VOICE`다.
 
 ## Alembic
 
 ```bash
-cd /srv/remory/backend
 source .venv/bin/activate
+alembic current
 alembic upgrade head
 ```
 
-배포 전후 확인:
-
-```bash
-alembic current
-alembic heads
-```
+배포 중 새 migration을 만들지 않는다. schema 변경이 필요한 작업은 별도 개발/리뷰 후 `migrations/versions`에 revision을 추가한다.
 
 ## systemd
 
-`/etc/systemd/system/remory-backend.service`:
+`/etc/systemd/system/remory-backend.service` 예시:
 
 ```ini
 [Unit]
-Description=Remory Backend API
-After=network.target mysql.service
+Description=Remory Backend
+After=network.target
 
 [Service]
-User=remory
-Group=remory
-WorkingDirectory=/srv/remory/backend
-Environment="PATH=/srv/remory/backend/.venv/bin"
-ExecStart=/srv/remory/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/remory/backend
+Environment="PATH=/opt/remory/backend/.venv/bin"
+ExecStart=/opt/remory/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=5
 
@@ -139,19 +121,14 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-적용:
-
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable remory-backend
-sudo systemctl start remory-backend
+sudo systemctl restart remory-backend
 sudo systemctl status remory-backend
-journalctl -u remory-backend -f
 ```
 
 ## Nginx
-
-`/etc/nginx/sites-available/remory`:
 
 ```nginx
 server {
@@ -175,120 +152,51 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 3600;
     }
 }
 ```
 
-활성화:
-
 ```bash
-sudo ln -s /etc/nginx/sites-available/remory /etc/nginx/sites-enabled/remory
 sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-HTTPS는 Certbot 또는 사용 중인 load balancer 정책에 맞춰 추가한다.
-
-## CORS
-
-프론트 도메인을 `.env`의 `CORS_ORIGINS`에 포함한다.
-
-```env
-CORS_ORIGINS=["https://app.example.com","http://localhost:5173"]
-```
-
-WebSocket은 브라우저에서 `wss://api.example.com/api/v1/ws/personas/{persona_id}/voice?token=...` 형태로 연결한다.
-
-## GitHub Actions
-
-현재 backend test workflow는 다음을 확인한다.
-
-- Python 3.12 dependency 설치
-- MySQL service container
-- `.env` 생성
-- `alembic upgrade head`
-- `pytest -v`
-
-배포 자동화까지 연결하려면 별도 job에서 SSH 또는 registry 기반 배포를 구성한다. 운영 서버에서 pull 후 다음 순서를 지킨다.
-
-```bash
-git pull
-source .venv/bin/activate
-pip install -r requirements.txt
-alembic upgrade head
-sudo systemctl restart remory-backend
-```
-
 ## 배포 체크리스트
 
-- [ ] `.env` 운영 값 설정
-- [ ] `DEBUG=False`
-- [ ] 강한 `SECRET_KEY`
-- [ ] MySQL DB/user/권한 생성
-- [ ] `alembic upgrade head` 성공
-- [ ] `uploads/` 쓰기 권한 확인
-- [ ] systemd service active
-- [ ] Nginx `nginx -t` 성공
-- [ ] CORS에 프론트 도메인 등록
-- [ ] `/health` 응답 확인
-- [ ] `/docs` 접근 정책 확인
-- [ ] WebSocket upgrade 확인
-- [ ] 로그 확인: `journalctl -u remory-backend -f`
+- `.env.example`과 `.env` 키 차이 확인
+- `DEBUG=False`
+- `SECRET_KEY` 운영용 난수로 교체
+- `CORS_ORIGINS`에 실제 frontend origin만 설정
+- `uploads/*` 디렉터리 생성 및 쓰기 권한 확인
+- `alembic current`, `alembic upgrade head` 성공
+- `curl http://127.0.0.1:8000/health` 성공
+- Nginx WebSocket upgrade 설정 확인
 
 ## 자주 발생한 오류
 
-### alembic access denied
+### pydantic Settings ValidationError
 
-증상:
+원인: `.env`에 `Settings`에 없는 키가 있다.
 
-```text
-Access denied for user 'remory'@'localhost'
-```
+해결: [.env 검증](#env-검증)의 `comm -13` 출력 키를 `.env`에서 제거한다.
 
-해결:
+### Alembic DB 접속 실패
 
-```sql
-GRANT ALL PRIVILEGES ON remory_db.* TO 'remory'@'localhost';
-FLUSH PRIVILEGES;
-```
+`MYSQL_*` 값, DB 계정 권한, 방화벽, MySQL bind address를 확인한다.
 
-`.env`의 DB 사용자/비밀번호/DB 이름과 실제 MySQL 계정을 맞춘다.
-
-### systemd bad message
-
-원인:
-
-- service 파일에 잘못된 따옴표 또는 Windows CRLF가 들어감
-- `ExecStart` 경로가 잘못됨
-- `WorkingDirectory`가 없음
-
-해결:
+### systemd 서비스 실패
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl status remory-backend
-journalctl -u remory-backend -n 100
+journalctl -u remory-backend -n 100 --no-pager
 ```
 
-service 파일은 Linux 경로와 LF line ending으로 저장한다.
+`WorkingDirectory`, venv 경로, `.env` 위치, 파일 권한을 확인한다.
 
-### ERR_CONNECTION_REFUSED
+### 413 Request Entity Too Large
 
-확인 순서:
+Nginx `client_max_body_size`와 `MAX_UPLOAD_SIZE`를 함께 확인한다.
 
-1. Uvicorn/systemd가 실행 중인지 확인
-2. `curl http://127.0.0.1:8000/health`
-3. Nginx가 실행 중인지 확인
-4. `sudo nginx -t`
-5. 방화벽/security group에서 80/443이 열려 있는지 확인
-6. 프론트 API base URL이 올바른지 확인
+### WebSocket 연결 실패
 
-```bash
-sudo systemctl status remory-backend
-sudo systemctl status nginx
-sudo ufw status
-```
+Nginx `Upgrade`, `Connection`, `proxy_http_version 1.1` 설정과 access token query parameter를 확인한다.

@@ -3,141 +3,97 @@
 ## 목차
 
 - [JWT 인증](#jwt-인증)
+- [Token API](#token-api)
 - [Role 구조](#role-구조)
-- [USER 권한](#user-권한)
-- [ADMIN 권한](#admin-권한)
-- [Owner-only 접근 규칙](#owner-only-접근-규칙)
-- [Admin-only API 규칙](#admin-only-api-규칙)
-- [401/403 처리 기준](#401403-처리-기준)
-- [보안 메모](#보안-메모)
+- [Owner-only 규칙](#owner-only-규칙)
+- [Admin-only 규칙](#admin-only-규칙)
+- [401/403 기준](#401403-기준)
 
 ## JWT 인증
 
-Remory는 access token과 refresh token을 사용한다.
+인증 dependency는 `app/deps.py`의 `get_current_user`, `get_admin_user`를 기준으로 한다. 일반 API는 `Authorization: Bearer <access_token>`을 요구하고, WebSocket은 query string의 `token`으로 access token을 전달한다.
 
-- Access token: 일반 API 인증에 사용
-- Refresh token: access token 재발급과 logout blacklist에 사용
-- Algorithm: `HS256`
-- Secret: `.env`의 `SECRET_KEY`
+```http
+Authorization: Bearer <access_token>
+```
 
-Access token payload에는 최소한 다음 값이 들어간다.
+access token과 refresh token 만료 기간은 `Settings`의 `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS`를 따른다.
+
+## Token API
+
+| API | 설명 |
+| --- | --- |
+| `POST /api/v1/auth/register` | 사용자 생성 후 access/refresh token pair 반환 |
+| `POST /api/v1/auth/sign-up` | register alias |
+| `POST /api/v1/auth/login` | email/password 인증 후 token pair 반환 |
+| `GET /api/v1/auth/me` | 현재 access token 사용자 조회 |
+| `POST /api/v1/auth/refresh-token` | refresh token rotation |
+| `POST /api/v1/auth/logout` | refresh token revoke |
+
+`AuthResponse`:
 
 ```json
 {
-  "sub": "1",
-  "token_type": "access",
-  "exp": 1780000000
+  "access_token": "jwt-access-token",
+  "refresh_token": "jwt-refresh-token",
+  "token_type": "bearer",
+  "user": {
+    "id": 1,
+    "email": "user@example.com",
+    "nickname": "user",
+    "created_at": "2026-05-12T10:00:00",
+    "updated_at": "2026-05-12T10:00:00"
+  }
 }
-```
-
-인증 헤더:
-
-```http
-Authorization: Bearer {access_token}
-```
-
-WebSocket 음성 대화는 헤더 대신 query param을 사용한다.
-
-```text
-WS /api/v1/ws/personas/{persona_id}/voice?token={access_token}
 ```
 
 ## Role 구조
 
-`User.role`은 일반 사용자와 관리자 권한을 구분한다.
+`app/models/user.py` 기준:
 
-| Role | 의미 |
+| Role | 값 | 설명 |
+| --- | --- | --- |
+| USER | `user` | 일반 사용자 |
+| ADMIN | `admin` | admin endpoint 접근 가능 |
+
+## Owner-only 규칙
+
+일반 사용자는 자신이 소유한 리소스만 접근한다. 서비스 레이어에서 `current_user.id`와 리소스 owner를 비교한다.
+
+| 리소스 | 기준 owner |
 | --- | --- |
-| `USER` | 일반 서비스 사용자 |
-| `ADMIN` | 검증/신고/음성 profile/usage/audit 운영자 |
+| Target | `Target.user_id` |
+| Target media | media의 target owner |
+| Consent | `ConsentLog.user_id` 또는 target owner |
+| Verification request | `TargetVerificationRequest.user_id` 또는 target owner |
+| Persona | persona의 target owner |
+| Chat/Message | chat의 `user_id`와 persona owner |
+| PhotoMemory | `PhotoMemory.user_id` |
+| StoryBook | `StoryBook.user_id` |
+| ShareLink | storybook owner |
+| Group | owner/member 권한 |
+| DeletionRequest | `DeletionRequest.user_id` |
+| Report | reporter user 기준 |
 
-## USER 권한
+## Admin-only 규칙
 
-USER는 자신이 소유한 리소스만 접근한다.
+`/api/v1/admin/*`는 `get_admin_user`를 사용한다. admin role이 아니면 접근할 수 없다.
 
-- 내 target 생성/조회/수정/삭제
-- 내 target media 업로드/조회/삭제
-- 내 consent 생성/조회/철회
-- 내 target verification 제출/조회
-- 내 target의 persona 생성/조회
-- 내 persona chat/message 생성/조회
-- 내 interview/photo memory/storybook 생성/조회
-- 내 storybook share link 생성/비활성화
-- 내가 속한 group 조회
-- 내 deletion request 생성/조회/취소
-- 내 report 생성/조회
+Admin API 범위:
 
-## ADMIN 권한
-
-ADMIN은 운영 목적의 admin API에 접근할 수 있다.
-
-- TargetVerificationRequest 목록/상세/파일 조회
-- verification approve/reject/need-more-info/revoke
-- deletion request 승인/처리/거절
+- verification request 목록/상세/파일/승인/거절/추가정보/철회
+- deletion request 목록/상세/승인처리/거절
 - audit log 조회
-- usage limit 조회/수정
+- usage limit, persona usage limit 수정
 - rate limit event 조회
-- report 조회/처리
+- report 조회/검토/해결/거절/action taken
 - voice profile 조회/승인/거절/철회
 
-ADMIN이라고 해서 일반 사용자 API의 owner-only 정책을 우회하는 구조는 아니다. 운영 API는 `/api/v1/admin/...` 아래에 별도로 둔다.
+## 401/403 기준
 
-## Owner-only 접근 규칙
-
-다음 리소스는 항상 owner check를 거친다.
-
-- `Target.user_id`
-- `TargetMedia.target.user_id`
-- `Persona.target.user_id`
-- `PersonaChat.user_id`
-- `PersonaMessage.chat.user_id`
-- `AIInterviewSession.user_id`
-- `PhotoMemory.user_id`
-- `StoryBook.user_id`
-- `ShareLink.storybook.user_id`
-- `MemoryGroup` owner/member 관계
-- `DeletionRequest.user_id`
-- `Report.reporter_user_id`
-
-정책:
-
-- 다른 사용자의 리소스 접근은 `403` 또는 정보 은닉을 위한 `404`로 처리한다.
-- 조회 목록 API는 내 리소스만 반환한다.
-- update/delete/process 계열 API는 대상 리소스가 내 것인지 먼저 확인한다.
-
-## Admin-only API 규칙
-
-Admin API는 `get_admin_user` dependency로 `User.role == ADMIN`을 확인한다.
-
-대표 경로:
-
-- `/api/v1/admin/verification-requests`
-- `/api/v1/admin/deletion-requests`
-- `/api/v1/admin/audit-logs`
-- `/api/v1/admin/usage-limits`
-- `/api/v1/admin/rate-limit-events`
-- `/api/v1/admin/reports`
-- `/api/v1/admin/voice-profiles`
-
-일반 사용자가 호출하면 `403`을 반환한다.
-
-## 401/403 처리 기준
-
-| Status | 기준 | 예시 |
+| Status | 상황 | 프론트 처리 |
 | --- | --- | --- |
-| `401` | 인증 자체가 실패 | token 없음, 만료, 잘못된 token, token type 불일치 |
-| `403` | 인증은 됐지만 권한 또는 정책 조건 실패 | owner 아님, ADMIN 아님, consent 없음, verification 미승인 |
+| 401 | token 누락, 만료, 검증 실패 | refresh token으로 재발급 후 재시도 |
+| 403 | 인증은 되었지만 owner/admin 조건 실패 | 권한 없음 안내 |
 
-프론트 처리:
-
-- `401`: refresh 또는 로그인 이동
-- `403`: 권한 없음/조건 미충족 안내
-- `404`: 존재하지 않거나 접근할 수 없는 리소스로 안내
-
-## 보안 메모
-
-- Access token은 가능한 memory에 둔다.
-- `.env`와 token, API key는 커밋하지 않는다.
-- verification 파일 경로는 일반 사용자 JSON 응답에 노출하지 않는다.
-- AuditLog metadata는 token/password/secret/api_key 등 민감 키를 sanitize한다.
-- voice cloning은 verification, consent, voice media, READY profile, review approval 조건을 모두 만족해야 한다.
+WebSocket은 token이 없거나 persona 접근 권한이 없으면 `WS_1008_POLICY_VIOLATION`으로 close한다.

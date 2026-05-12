@@ -3,294 +3,394 @@
 ## 목차
 
 - [공통 규칙](#공통-규칙)
+- [Response Shape](#response-shape)
+- [프론트 렌더링 기준](#프론트-렌더링-기준)
 - [Auth](#auth)
 - [Target](#target)
 - [Consent](#consent)
 - [Verification](#verification)
+- [Media](#media)
 - [Persona](#persona)
 - [Chat](#chat)
 - [Interview](#interview)
-- [PhotoMemory](#photomemory)
+- [Photo Memory](#photo-memory)
 - [StoryBook](#storybook)
-- [ShareLink](#sharelink)
+- [Sharing](#sharing)
 - [Group](#group)
 - [Deletion](#deletion)
-- [Voice](#voice)
-- [Admin](#admin)
 - [Report](#report)
+- [Admin](#admin)
+- [Realtime Voice](#realtime-voice)
+- [Enum 값](#enum-값)
 
 ## 공통 규칙
 
-Base URL:
+| 항목 | 값 |
+| --- | --- |
+| Base URL | `/api/v1` |
+| Health | `GET /health` |
+| 인증 | `Authorization: Bearer <access_token>` |
+| JSON | `Content-Type: application/json` |
+| Upload | `multipart/form-data` |
+| DateTime | ISO-8601 문자열 |
+| Pagination | `{ "total": number, "skip": number, "limit": number, "items": [...] }` |
 
-```text
-http://localhost:8000
-```
-
-모든 v1 API prefix:
-
-```text
-/api/v1
-```
-
-인증이 필요한 API는 Bearer JWT를 사용한다.
-
-```http
-Authorization: Bearer {access_token}
-```
-
-일반 오류 응답:
+FastAPI validation 실패는 기본 `422` shape를 반환한다.
 
 ```json
 {
-  "detail": "Target not found (ID: 123)"
+  "detail": [
+    {
+      "type": "missing",
+      "loc": ["body", "email"],
+      "msg": "Field required",
+      "input": {}
+    }
+  ]
 }
 ```
 
-주요 상태 코드:
+서비스 예외는 `app/utils/exceptions.py`에서 `HTTPException(detail=<message>)`로 변환된다. 프론트는 문자열 `detail`과 FastAPI validation 배열 `detail`을 모두 처리해야 한다.
 
-| Status | Meaning |
+```json
+{
+  "detail": "Invalid credentials"
+}
+```
+
+## Response Shape
+
+### 단일 객체
+
+`response_model`이 `TargetResponse`, `UserResponse`처럼 단일 schema이면 최상위가 곧 객체다.
+
+```json
+{
+  "id": 1,
+  "user_id": 1,
+  "name": "Mom",
+  "description": "Warm and thoughtful",
+  "target_type": "parent",
+  "profile_image_path": null,
+  "is_deleted": false,
+  "created_at": "2026-05-12T10:00:00",
+  "updated_at": "2026-05-12T10:00:00"
+}
+```
+
+### 배열
+
+`response_model=list[...]` endpoint는 배열을 그대로 반환한다.
+
+```json
+[
+  {
+    "id": 1,
+    "persona_id": 1,
+    "title": "First chat",
+    "created_at": "2026-05-12T10:00:00",
+    "updated_at": "2026-05-12T10:00:00"
+  }
+]
+```
+
+### 페이지네이션
+
+`PaginatedResponse[...]`는 `items`를 렌더링하고 `total`, `skip`, `limit`으로 pagination UI를 만든다.
+
+```json
+{
+  "total": 1,
+  "skip": 0,
+  "limit": 20,
+  "items": [
+    {
+      "id": 1,
+      "name": "Mom",
+      "target_type": "parent"
+    }
+  ]
+}
+```
+
+### 인증 응답
+
+회원가입/로그인은 token pair와 user 객체를 함께 반환한다.
+
+```json
+{
+  "access_token": "jwt-access-token",
+  "refresh_token": "jwt-refresh-token",
+  "token_type": "bearer",
+  "user": {
+    "id": 1,
+    "email": "user@example.com",
+    "nickname": "user",
+    "created_at": "2026-05-12T10:00:00",
+    "updated_at": "2026-05-12T10:00:00"
+  }
+}
+```
+
+### 204 응답
+
+`DELETE /api/v1/targets/{target_id}`는 성공 시 body 없이 `204 No Content`다.
+
+## 프론트 렌더링 기준
+
+| API shape | 화면 처리 |
 | --- | --- |
-| `400` | 잘못된 요청, 파일 업로드 실패, 비즈니스 처리 오류 |
-| `401` | 토큰 없음, 만료, 형식 오류 |
-| `403` | 소유자 아님, 동의/검증 미충족, 권한 부족 |
-| `404` | 리소스 없음 |
-| `422` | body/form/enum validation 실패 |
-| `429` | rate limit 또는 usage limit 초과 |
-
-파일 업로드는 `multipart/form-data`를 사용한다. 로컬 파일 저장은 기존 `uploads/` 구조를 유지한다.
+| 단일 객체 | 상세 화면 state에 그대로 저장한다. nullable 필드는 `null` 표시를 허용한다. |
+| 배열 | 빈 배열이면 empty state를 보여준다. pagination control은 만들지 않는다. |
+| `PaginatedResponse` | `items`만 리스트에 뿌리고 `total`, `skip`, `limit`으로 다음 요청 offset을 계산한다. |
+| `AuthResponse` | `access_token`, `refresh_token`을 저장하고 `user`를 session profile로 저장한다. |
+| `MessageResponse`류 | `message`를 toast/snackbar에 표시한다. |
+| `multipart/form-data` | JSON body가 아니라 `FormData`로 전송한다. |
+| 401 | refresh token으로 재발급 후 원 요청 재시도, 실패하면 로그아웃 |
+| 403 | 권한 없음 안내 |
+| 422 | `detail` 배열이면 필드별 validation 메시지로 매핑 |
 
 ## Auth
 
-| Method | Path | Auth | 설명 |
+| API | 인증 | Request | Response |
 | --- | --- | --- | --- |
-| `POST` | `/api/v1/auth/register` | No | 회원가입, access/refresh token 발급 |
-| `POST` | `/api/v1/auth/sign-up` | No | register alias |
-| `POST` | `/api/v1/auth/login` | No | 로그인 |
-| `GET` | `/api/v1/auth/me` | Yes | 현재 사용자 조회 |
-| `POST` | `/api/v1/auth/refresh-token` | No | refresh token으로 access token 재발급 |
-| `POST` | `/api/v1/auth/logout` | No | refresh token blacklist 처리 |
+| `POST /api/v1/auth/register` | 없음 | `RegisterRequest(email*, nickname*, password*)` | `201 AuthResponse` |
+| `POST /api/v1/auth/sign-up` | 없음 | `RegisterRequest` | `201 AuthResponse` |
+| `POST /api/v1/auth/login` | 없음 | `LoginRequest(email*, password*)` | `AuthResponse` |
+| `GET /api/v1/auth/me` | 필요 | 없음 | `UserResponse` |
+| `POST /api/v1/auth/refresh-token` | 없음 | `RefreshTokenRequest(refresh_token*)` | `TokenResponse` |
+| `POST /api/v1/auth/logout` | 없음 | `LogoutRequest(refresh_token*)` | `MessageResponse(message*)` |
 
-Register/Login response는 `access_token`, `refresh_token`, `token_type`, `user`를 포함한다.
+### 회원가입
+
+```http
+POST /api/v1/auth/register
+```
+
+```json
+{
+  "email": "user@example.com",
+  "nickname": "user",
+  "password": "securepassword123"
+}
+```
+
+성공 시 `AuthResponse`를 받는다. 실패 시 중복 이메일/닉네임 등은 `detail` 문자열로 표시된다.
 
 ## Target
 
-| Method | Path | Auth | 설명 |
+| API | 인증 | Request/Query | Response |
 | --- | --- | --- | --- |
-| `POST` | `/api/v1/targets` | Yes | target 생성 |
-| `GET` | `/api/v1/targets?skip=0&limit=20` | Yes | 내 target 목록 |
-| `GET` | `/api/v1/targets/{target_id}` | Yes | 내 target 상세 |
-| `PUT` | `/api/v1/targets/{target_id}` | Yes | target 수정 |
-| `DELETE` | `/api/v1/targets/{target_id}` | Yes | target soft delete |
-| `POST` | `/api/v1/targets/{target_id}/media` | Yes | image/voice 업로드 |
-| `GET` | `/api/v1/targets/{target_id}/media` | Yes | target media 목록 |
-| `DELETE` | `/api/v1/media/{media_id}` | Yes | media 삭제 |
+| `POST /api/v1/targets` | 필요 | `TargetCreateRequest(name*, description, target_type)` | `201 TargetResponse` |
+| `GET /api/v1/targets?skip=0&limit=20` | 필요 | query | `PaginatedResponse[TargetResponse]` |
+| `GET /api/v1/targets/{target_id}` | 필요 | path | `TargetDetailResponse` |
+| `PUT /api/v1/targets/{target_id}` | 필요 | `TargetUpdateRequest` | `TargetResponse` |
+| `DELETE /api/v1/targets/{target_id}` | 필요 | path | `204 No Content` |
 
-Target media upload form:
-
-```text
-media_type=image | voice
-file=@photo.jpg | @voice.mp3
-```
+`TargetDetailResponse`는 `TargetResponse`에 `media_count`, `has_persona`가 추가된다.
 
 ## Consent
 
-| Method | Path | Auth | 설명 |
+| API | 인증 | Request | Response |
 | --- | --- | --- | --- |
-| `POST` | `/api/v1/consents` | Yes | consent history row 생성 |
-| `GET` | `/api/v1/consents` | Yes | 내 consent 목록 |
-| `GET` | `/api/v1/targets/{target_id}/consents` | Yes | target별 consent 목록 |
-| `PATCH` | `/api/v1/consents/{consent_id}/revoke` | Yes | consent 철회 |
+| `POST /api/v1/consents` | 필요 | `ConsentCreate` | `201 ConsentResponse` |
+| `GET /api/v1/consents` | 필요 | 없음 | `ConsentResponse[]` |
+| `GET /api/v1/targets/{target_id}/consents` | 필요 | path | `ConsentResponse[]` |
+| `PATCH /api/v1/consents/{consent_id}/revoke` | 필요 | 없음 | `ConsentRevokeResponse` |
 
-권장 consent type:
-
-- `target_profile_consent`
-- `photo_upload_consent`
-- `voice_upload_consent`
-- `voice_cloning_consent`
-- `ai_persona_creation_consent`
-- `ai_response_notice_consent`
-- `storybook_share_consent`
-- `group_share_consent`
-- `data_retention_consent`
-- `third_party_ai_processing_consent`
+`ConsentCreate`는 `consent_type*`, `target_id`, `consent_version`, `consent_text_snapshot`, `is_agreed`, `is_consented`, `details`를 받는다.
 
 ## Verification
 
-사용자 API:
-
-| Method | Path | Auth | 설명 |
+| API | 인증 | Request | Response |
 | --- | --- | --- | --- |
-| `POST` | `/api/v1/targets/{target_id}/verification-requests` | Yes | 검증 문서 제출 |
-| `GET` | `/api/v1/targets/{target_id}/verification-requests` | Yes | target 검증 요청 목록 |
-| `GET` | `/api/v1/verification-requests/{request_id}` | Yes | 검증 요청 상세 |
+| `POST /api/v1/targets/{target_id}/verification-requests` | 필요 | multipart: `verification_type_param*`, `applicant_note`, `file*` | `201 VerificationRequestResponse` |
+| `GET /api/v1/targets/{target_id}/verification-requests?skip=0&limit=20` | 필요 | query | `PaginatedResponse[VerificationRequestResponse]` |
+| `GET /api/v1/verification-requests/{request_id}` | 필요 | path | `VerificationRequestDetailResponse` |
 
-Admin API:
+`verification_type_param`은 `FAMILY_RELATION_CERTIFICATE`, `ID_CARD`, `SELF_DECLARATION`, `OTHER` 중 하나다. 생성 조건과 관리자 검수 흐름은 [05-verification-consent-flow.md](05-verification-consent-flow.md)를 본다.
 
-| Method | Path | Auth | 설명 |
+## Media
+
+| API | 인증 | Request | Response |
 | --- | --- | --- | --- |
-| `GET` | `/api/v1/admin/verification-requests` | Admin | 검증 요청 목록 |
-| `GET` | `/api/v1/admin/verification-requests/{request_id}` | Admin | 검증 요청 상세 |
-| `GET` | `/api/v1/admin/verification-requests/{request_id}/file` | Admin | 검증 파일 다운로드 |
-| `PATCH` | `/api/v1/admin/verification-requests/{request_id}/approve` | Admin | 승인 |
-| `PATCH` | `/api/v1/admin/verification-requests/{request_id}/reject` | Admin | 거절 |
-| `PATCH` | `/api/v1/admin/verification-requests/{request_id}/need-more-info` | Admin | 추가 정보 요청 |
-| `PATCH` | `/api/v1/admin/verification-requests/{request_id}/revoke` | Admin | 승인 철회 |
+| `POST /api/v1/targets/{target_id}/media` | 필요 | multipart: `media_type*`, `file*` | `201 MediaUploadResponse` |
+| `GET /api/v1/targets/{target_id}/media` | 필요 | path | `TargetMediaResponse[]` |
+| `DELETE /api/v1/media/{media_id}` | 필요 | path | `MediaDeleteResponse(message)` |
 
-`TargetVerificationRequest.status`: `PENDING`, `NEED_MORE_INFO`, `APPROVED`, `REJECTED`, `EXPIRED`, `REVOKED`.
+`media_type`은 `image` 또는 `voice`다.
 
 ## Persona
 
-| Method | Path | Auth | 설명 |
+| API | 인증 | Request | Response |
 | --- | --- | --- | --- |
-| `POST` | `/api/v1/targets/{target_id}/persona` | Yes | target 기반 persona 생성 |
-| `GET` | `/api/v1/personas/{persona_id}` | Yes | persona 상세 |
-| `GET` | `/api/v1/personas/{persona_id}/status` | Yes | persona 상태 |
-| `POST` | `/api/v1/personas/{persona_id}/voice-profile` | Yes | voice profile 생성/갱신 |
-| `GET` | `/api/v1/personas/{persona_id}/voice-profile` | Yes | voice profile 조회 |
-| `POST` | `/api/v1/personas/{persona_id}/voice-profile/evaluate` | Yes | voice sample 평가 |
-| `PATCH` | `/api/v1/personas/{persona_id}/voice-profile/user-confirm` | Yes | 사용자 확인 |
+| `POST /api/v1/targets/{target_id}/persona` | 필요 | 없음 | `201 PersonaDetailResponse` |
+| `GET /api/v1/personas/{persona_id}` | 필요 | path | `PersonaDetailResponse` |
+| `GET /api/v1/personas/{persona_id}/status` | 필요 | path | `PersonaStatusResponse` |
+| `POST /api/v1/personas/{persona_id}/voice-profile` | 필요 | 없음 | `201 PersonaVoiceProfileResponse` |
+| `GET /api/v1/personas/{persona_id}/voice-profile` | 필요 | path | `PersonaVoiceProfileResponse` |
+| `POST /api/v1/personas/{persona_id}/voice-profile/evaluate` | 필요 | 없음 | `PersonaVoiceProfileResponse` |
+| `PATCH /api/v1/personas/{persona_id}/voice-profile/user-confirm` | 필요 | `VoiceProfileReviewRequest(review_note)` | `PersonaVoiceProfileResponse` |
 
-Persona 생성 조건은 [05-verification-consent-flow.md](05-verification-consent-flow.md)에 정리되어 있다.
+`PersonaDetailResponse`에는 `status`, `persona_name`, `speaking_style`, `personality_summary`, `memory_summary`, `system_prompt`, `is_voice_profile_created`, `is_consent_required`, `voice_profile`이 포함된다.
 
 ## Chat
 
-| Method | Path | Auth | 설명 |
+| API | 인증 | Request | Response |
 | --- | --- | --- | --- |
-| `POST` | `/api/v1/personas/{persona_id}/chats` | Yes | persona chat 생성 |
-| `GET` | `/api/v1/personas/{persona_id}/chats` | Yes | persona chat 목록 |
-| `POST` | `/api/v1/chats/{chat_id}/messages` | Yes | 텍스트 메시지 전송, persona 응답 생성 |
-| `POST` | `/api/v1/chats/{chat_id}/audio` | Yes | 음성 업로드, STT, persona 응답 생성 |
-| `GET` | `/api/v1/chats/{chat_id}/messages` | Yes | chat messages 조회 |
+| `POST /api/v1/personas/{persona_id}/chats` | 필요 | `PersonaChatCreateRequest(title)` | `201 PersonaChatResponse` |
+| `GET /api/v1/personas/{persona_id}/chats` | 필요 | path | `PersonaChatResponse[]` |
+| `POST /api/v1/chats/{chat_id}/messages` | 필요 | `PersonaMessageCreateRequest` | `201 PersonaMessagePairResponse` |
+| `POST /api/v1/chats/{chat_id}/audio` | 필요 | multipart audio file | `201 PersonaMessagePairResponse` |
+| `GET /api/v1/chats/{chat_id}/messages` | 필요 | path | `PersonaMessageResponse[]` |
 
-Audio upload form:
-
-```text
-file=@voice.wav
-generate_audio=true | false
-```
+`PersonaMessagePairResponse`는 `{ "user_message": PersonaMessageResponse, "persona_message": PersonaMessageResponse }`다.
 
 ## Interview
 
-| Method | Path | Auth | 설명 |
+| API | 인증 | Request | Response |
 | --- | --- | --- | --- |
-| `POST` | `/api/v1/interviews` | Yes | interview session 생성 |
-| `GET` | `/api/v1/interviews/{session_id}` | Yes | session 상세 |
-| `POST` | `/api/v1/interviews/{session_id}/questions` | Yes | AI 질문 생성 |
-| `POST` | `/api/v1/interviews/{session_id}/answers` | Yes | 답변 저장 |
+| `POST /api/v1/interviews` | 필요 | `AIInterviewSessionCreateRequest(session_type*, title, target_id, photo_memory_id)` | `201 AIInterviewSessionResponse` |
+| `GET /api/v1/interviews/{session_id}` | 필요 | path | `AIInterviewSessionDetailResponse` |
+| `POST /api/v1/interviews/{session_id}/questions` | 필요 | `AIInterviewQuestionCreateRequest(question_type)` | `201 AIInterviewQuestionResponse` |
+| `POST /api/v1/interviews/{session_id}/answers` | 필요 | `AIInterviewAnswerCreateRequest(question_id*, answer_text, answer_audio_path)` | `201 AIInterviewAnswerResponse` |
 
-`session_type`: `TARGET_PROFILE`, `PHOTO_MEMORY`, `SELF_STORY`.
+`session_type`은 `TARGET_PROFILE`, `PHOTO_MEMORY`, `SELF_STORY`다.
 
-## PhotoMemory
+## Photo Memory
 
-| Method | Path | Auth | 설명 |
+| API | 인증 | Request | Response |
 | --- | --- | --- | --- |
-| `POST` | `/api/v1/photo-memories` | Yes | 사진 기억 업로드/생성 |
-| `GET` | `/api/v1/photo-memories` | Yes | 내 photo memory 목록 |
-| `GET` | `/api/v1/photo-memories/{photo_memory_id}` | Yes | 상세 |
-| `DELETE` | `/api/v1/photo-memories/{photo_memory_id}` | Yes | 삭제 |
+| `POST /api/v1/photo-memories` | 필요 | multipart: `title*`, `description`, `taken_at`, `location`, `file*` | `201 PhotoMemoryResponse` |
+| `GET /api/v1/photo-memories` | 필요 | 없음 | `PhotoMemoryResponse[]` |
+| `GET /api/v1/photo-memories/{photo_memory_id}` | 필요 | path | `PhotoMemoryResponse` |
+| `DELETE /api/v1/photo-memories/{photo_memory_id}` | 필요 | path | `PhotoMemoryDeleteResponse(message)` |
 
 ## StoryBook
 
-| Method | Path | Auth | 설명 |
+| API | 인증 | Request | Response |
 | --- | --- | --- | --- |
-| `POST` | `/api/v1/storybooks` | Yes | storybook 생성 |
-| `GET` | `/api/v1/storybooks` | Yes | 목록 |
-| `GET` | `/api/v1/storybooks/{storybook_id}` | Yes | 상세 |
-| `GET` | `/api/v1/storybooks/{storybook_id}/chapters` | Yes | chapter 목록 |
-| `POST` | `/api/v1/storybooks/{storybook_id}/regenerate` | Yes | 재생성 |
+| `POST /api/v1/storybooks` | 필요 | `StoryBookCreateRequest(title*, interview_session_id, photo_memory_id, visibility)` | `201 StoryBookDetailResponse` |
+| `GET /api/v1/storybooks` | 필요 | 없음 | `StoryBookResponse[]` |
+| `GET /api/v1/storybooks/{storybook_id}` | 필요 | path | `StoryBookDetailResponse` |
+| `GET /api/v1/storybooks/{storybook_id}/chapters` | 필요 | path | `StoryChapterResponse[]` |
+| `POST /api/v1/storybooks/{storybook_id}/regenerate` | 필요 | 없음 | `StoryBookDetailResponse` |
 
-Gemini가 실패하거나 JSON 파싱이 실패하면 mock storybook content로 fallback한다.
+## Sharing
 
-## ShareLink
-
-| Method | Path | Auth | 설명 |
+| API | 인증 | Request | Response |
 | --- | --- | --- | --- |
-| `POST` | `/api/v1/storybooks/{storybook_id}/share-links` | Yes | 공유 링크 생성 |
-| `GET` | `/api/v1/storybooks/{storybook_id}/share-links` | Yes | 공유 링크 목록 |
-| `GET` | `/api/v1/share/{token}` | No | 공개 공유 storybook 조회 |
-| `PATCH` | `/api/v1/share-links/{share_link_id}/disable` | Yes | 공유 링크 비활성화 |
+| `POST /api/v1/storybooks/{storybook_id}/share-links` | 필요 | `ShareLinkCreateRequest(expires_at)` | `201 ShareLinkResponse` |
+| `GET /api/v1/storybooks/{storybook_id}/share-links` | 필요 | path | `ShareLinkResponse[]` |
+| `GET /api/v1/share/{token}` | 없음 | path | `PublicSharedStoryBookResponse` |
+| `PATCH /api/v1/share-links/{share_link_id}/disable` | 필요 | 없음 | `ShareLinkDisableResponse` |
 
-공개 조회 응답은 owner 내부 정보와 민감한 파일 경로를 노출하지 않는 읽기 전용 형태여야 한다.
+공개 조회 응답은 `{ "title", "summary", "visibility", "chapters" }`로 구성된다.
 
 ## Group
 
-| Method | Path | Auth | 설명 |
+| API | 인증 | Request | Response |
 | --- | --- | --- | --- |
-| `POST` | `/api/v1/groups` | Yes | memory group 생성 |
-| `GET` | `/api/v1/groups` | Yes | 내 group 목록 |
-| `GET` | `/api/v1/groups/{group_id}` | Yes | group 상세 |
-| `POST` | `/api/v1/groups/{group_id}/members` | Yes | member 추가 |
-| `GET` | `/api/v1/groups/{group_id}/members` | Yes | member 목록 |
-| `POST` | `/api/v1/groups/{group_id}/storybooks/{storybook_id}` | Yes | group에 storybook 공유 |
-| `GET` | `/api/v1/groups/{group_id}/storybooks` | Yes | group 공유 storybook 목록 |
+| `POST /api/v1/groups` | 필요 | `MemoryGroupCreateRequest(name*, description)` | `201 MemoryGroupResponse` |
+| `GET /api/v1/groups` | 필요 | 없음 | `MemoryGroupResponse[]` |
+| `GET /api/v1/groups/{group_id}` | 필요 | path | `MemoryGroupDetailResponse` |
+| `POST /api/v1/groups/{group_id}/members` | 필요 | `GroupMemberCreateRequest(user_id*, role)` | `201 GroupMemberResponse` |
+| `GET /api/v1/groups/{group_id}/members` | 필요 | path | `GroupMemberResponse[]` |
+| `POST /api/v1/groups/{group_id}/storybooks/{storybook_id}` | 필요 | 없음 | `201 GroupStoryBookResponse` |
+| `GET /api/v1/groups/{group_id}/storybooks` | 필요 | path | `GroupStoryBookListItemResponse[]` |
 
 ## Deletion
 
-| Method | Path | Auth | 설명 |
+| API | 인증 | Request | Response |
 | --- | --- | --- | --- |
-| `POST` | `/api/v1/deletion-requests` | Yes | 삭제 요청 생성 |
-| `GET` | `/api/v1/deletion-requests` | Yes | 내 삭제 요청 목록 |
-| `GET` | `/api/v1/deletion-requests/{request_id}` | Yes | 삭제 요청 상세 |
-| `PATCH` | `/api/v1/deletion-requests/{request_id}/cancel` | Yes | 삭제 요청 취소 |
-
-Admin deletion:
-
-- `GET /api/v1/admin/deletion-requests`
-- `GET /api/v1/admin/deletion-requests/{request_id}`
-- `PATCH /api/v1/admin/deletion-requests/{request_id}/approve-and-process`
-- `PATCH /api/v1/admin/deletion-requests/{request_id}/reject`
-
-## Voice
-
-Voice profile:
-
-- `POST /api/v1/personas/{persona_id}/voice-profile`
-- `GET /api/v1/personas/{persona_id}/voice-profile`
-- `POST /api/v1/personas/{persona_id}/voice-profile/evaluate`
-- `PATCH /api/v1/personas/{persona_id}/voice-profile/user-confirm`
-
-Realtime voice chat:
-
-- `WS /api/v1/ws/personas/{persona_id}/voice?token={access_token}`
-
-자세한 WebSocket protocol은 [06-realtime-voice-chat.md](06-realtime-voice-chat.md)를 본다.
-
-Usage/rate limit:
-
-- user monthly voice generation
-- user monthly STT request
-- user monthly voice call seconds
-- persona monthly voice generation
-- persona monthly voice call seconds
-
-## Admin
-
-Admin-only API는 `User.role == ADMIN`만 접근한다.
-
-| Area | Paths |
-| --- | --- |
-| Verification | `/api/v1/admin/verification-requests...` |
-| Deletion | `/api/v1/admin/deletion-requests...` |
-| AuditLog | `/api/v1/admin/audit-logs` |
-| UsageLimit | `/api/v1/admin/usage-limits`, `/api/v1/admin/users/{user_id}/usage-limit`, `/api/v1/admin/personas/{persona_id}/usage-limit` |
-| RateLimitEvent | `/api/v1/admin/rate-limit-events` |
-| Reports | `/api/v1/admin/reports...` |
-| VoiceProfile review | `/api/v1/admin/voice-profiles...` |
+| `POST /api/v1/deletion-requests` | 필요 | `DeletionRequestCreateRequest(target_type*, target_id, reason)` | `201 DeletionRequestResponse` |
+| `GET /api/v1/deletion-requests` | 필요 | 없음 | `DeletionRequestResponse[]` |
+| `GET /api/v1/deletion-requests/{request_id}` | 필요 | path | `DeletionRequestResponse` |
+| `PATCH /api/v1/deletion-requests/{request_id}/cancel` | 필요 | 없음 | `DeletionRequestResponse` |
 
 ## Report
 
-User:
+| API | 인증 | Request | Response |
+| --- | --- | --- | --- |
+| `POST /api/v1/reports` | 필요 | `CreateReportRequest(target_type*, target_id*, reason_type*, reason_detail)` | `ReportResponse` |
+| `GET /api/v1/reports?page=1&size=20` | 필요 | query | `PaginatedResponse[ReportResponse]` |
+| `GET /api/v1/reports/{report_id}` | 필요 | path | `ReportResponse` |
 
-- `POST /api/v1/reports`
-- `GET /api/v1/reports`
-- `GET /api/v1/reports/{report_id}`
+## Admin
 
-Admin:
+모든 admin API는 `User.role == admin`이어야 한다.
 
-- `GET /api/v1/admin/reports`
-- `GET /api/v1/admin/reports/{report_id}`
-- `PATCH /api/v1/admin/reports/{report_id}/reviewing`
-- `PATCH /api/v1/admin/reports/{report_id}/resolve`
-- `PATCH /api/v1/admin/reports/{report_id}/reject`
-- `PATCH /api/v1/admin/reports/{report_id}/action-taken`
+| API | Request | Response |
+| --- | --- | --- |
+| `GET /api/v1/admin/verification-requests` | query: `status`, `page`, `size` | `PaginatedResponse[VerificationRequestAdminResponse]` |
+| `GET /api/v1/admin/verification-requests/{request_id}` | path | `VerificationRequestAdminResponse` |
+| `GET /api/v1/admin/verification-requests/{request_id}/file` | path | file response |
+| `PATCH /api/v1/admin/verification-requests/{request_id}/approve` | `VerificationRequestApproveRequest` | `VerificationRequestAdminResponse` |
+| `PATCH /api/v1/admin/verification-requests/{request_id}/reject` | `VerificationRequestRejectRequest` | `VerificationRequestAdminResponse` |
+| `PATCH /api/v1/admin/verification-requests/{request_id}/need-more-info` | `VerificationRequestNeedMoreInfoRequest` | `VerificationRequestAdminResponse` |
+| `PATCH /api/v1/admin/verification-requests/{request_id}/revoke` | `VerificationRequestRevokeRequest` | `VerificationRequestAdminResponse` |
+| `GET /api/v1/admin/deletion-requests` | query | `DeletionRequestResponse[]` |
+| `GET /api/v1/admin/deletion-requests/{request_id}` | path | `DeletionRequestResponse` |
+| `PATCH /api/v1/admin/deletion-requests/{request_id}/approve-and-process` | 없음 | `DeletionRequestResponse` |
+| `PATCH /api/v1/admin/deletion-requests/{request_id}/reject` | 없음 | `DeletionRequestResponse` |
+| `GET /api/v1/admin/audit-logs` | query filters | `PaginatedResponse[AuditLogResponse]` |
+| `GET /api/v1/admin/usage-limits` | query | `PaginatedResponse[UsageLimitResponse]` |
+| `PATCH /api/v1/admin/users/{user_id}/usage-limit` | `UpdateUsageLimitRequest` | `UsageLimitResponse` |
+| `PATCH /api/v1/admin/personas/{persona_id}/usage-limit` | `UpdatePersonaUsageLimitRequest` | `PersonaUsageLimitResponse` |
+| `GET /api/v1/admin/rate-limit-events` | query | `PaginatedResponse[RateLimitEventResponse]` |
+| `GET /api/v1/admin/reports` | query | `PaginatedResponse` |
+| `GET /api/v1/admin/reports/{report_id}` | path | report object |
+| `PATCH /api/v1/admin/reports/{report_id}/reviewing` | optional JSON dict | report object |
+| `PATCH /api/v1/admin/reports/{report_id}/resolve` | optional JSON dict | report object |
+| `PATCH /api/v1/admin/reports/{report_id}/reject` | optional JSON dict | report object |
+| `PATCH /api/v1/admin/reports/{report_id}/action-taken` | optional JSON dict | report object |
+| `GET /api/v1/admin/voice-profiles/{voice_profile_id}` | path | `PersonaVoiceProfileResponse` |
+| `PATCH /api/v1/admin/voice-profiles/{voice_profile_id}/approve` | `VoiceProfileReviewRequest` | `PersonaVoiceProfileResponse` |
+| `PATCH /api/v1/admin/voice-profiles/{voice_profile_id}/reject` | `VoiceProfileReviewRequest` | `PersonaVoiceProfileResponse` |
+| `PATCH /api/v1/admin/voice-profiles/{voice_profile_id}/revoke` | `VoiceProfileReviewRequest` | `PersonaVoiceProfileResponse` |
+
+## Realtime Voice
+
+```http
+WS /api/v1/ws/personas/{persona_id}/voice?token=<access_token>
+```
+
+상세 protocol은 [06-realtime-voice-chat.md](06-realtime-voice-chat.md)를 본다.
+
+서버 송신 예시:
+
+```json
+{ "type": "session_started", "session_id": 1 }
+```
+
+```json
+{ "type": "final_transcript", "text": "안녕하세요" }
+```
+
+```json
+{ "type": "persona_audio", "audio_url": "/uploads/voices/call_outputs/1/output.wav", "audio_file_path": "uploads/voices/call_outputs/1/output.wav" }
+```
+
+```json
+{ "type": "error", "message": "Voice call session has not started" }
+```
+
+## Enum 값
+
+| Enum | 값 |
+| --- | --- |
+| `TargetType` | `parent`, `grandparent`, `friend`, `romantic`, `self`, `other` |
+| `MediaType` | `image`, `voice` |
+| `ConsentType` | `target_profile_consent`, `photo_upload_consent`, `voice_upload_consent`, `voice_cloning_consent`, `ai_persona_creation_consent`, `ai_response_notice_consent`, `storybook_share_consent`, `group_share_consent`, `data_retention_consent`, `third_party_ai_processing_consent`, legacy: `voice_collection`, `photo_collection`, `persona_creation`, `data_usage`, `ai_processing`, `ai_response_notice`, `storybook_share` |
+| `VerificationType` | `FAMILY_RELATION_CERTIFICATE`, `ID_CARD`, `SELF_DECLARATION`, `OTHER` |
+| `VerificationStatus` | `PENDING`, `NEED_MORE_INFO`, `APPROVED`, `REJECTED`, `EXPIRED`, `REVOKED` |
+| `PersonaStatus` | `PENDING`, `READY`, `FAILED` |
+| `VoiceProfileStatus` | `PENDING`, `PROCESSING`, `READY`, `FAILED`, `NEEDS_MORE_SAMPLES`, `REVOKED` |
+| `VoiceProfileReviewStatus` | `NOT_REVIEWED`, `USER_CONFIRMED`, `ADMIN_APPROVED`, `REJECTED` |
+| `MessageType` | `TEXT`, `AUDIO` |
+| `SenderType` | `USER`, `PERSONA`, `SYSTEM` |
+| `InterviewType` | `TARGET_PROFILE`, `PHOTO_MEMORY`, `SELF_STORY` |
+| `StoryBookVisibility` | `PRIVATE`, `LINK`, `GROUP`, `PUBLIC` |
+| `DeletionStatus` | `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED` |
+| `GroupMemberRole` | `OWNER`, `MEMBER`, `VIEWER` |
+| `ReportStatus` | `PENDING`, `REVIEWING`, `RESOLVED`, `REJECTED`, `ACTION_TAKEN` |
