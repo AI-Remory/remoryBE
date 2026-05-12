@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     MONTHLY_USER_VOICE_CALL_SECONDS_LIMIT: int = 3600  # 1 hour per month
     RATE_LIMIT_REQUESTS_PER_MINUTE_DEFAULT: int = 60  # Default: 60 requests per minute
     RATE_LIMIT_REQUESTS_PER_MINUTE_VOICE: int = 10  # Voice endpoints: 10 per minute
+    VOICE_WS_MAX_ACTIVE_CONNECTIONS_PER_USER: int = 2
+    VOICE_WS_MAX_UTTERANCES_PER_MINUTE: int = 20
+    VOICE_WS_MAX_CHUNK_BYTES: int = 262144
+    VOICE_WS_MAX_CHUNKS_PER_UTTERANCE: int = 100
 
     @property
     def DATABASE_URL(self) -> str:

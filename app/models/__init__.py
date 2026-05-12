@@ -29,6 +29,7 @@ from app.models.target_verification import TargetVerificationRequest, Verificati
 from app.models.usage_limit import UsageLimit, PersonaUsageLimit, RateLimitEvent
 from app.models.audit_log import AuditLog
 from app.models.report import Report, ReportTargetType, ReportReasonType, ReportStatus
+from app.models.voice_call import VoiceCallSession, VoiceCallSessionStatus
 
 __all__ = [
     "Base",
@@ -84,6 +85,8 @@ __all__ = [
     "ReportTargetType",
     "ReportReasonType",
     "ReportStatus",
+    "VoiceCallSession",
+    "VoiceCallSessionStatus",
 ]
 
 
