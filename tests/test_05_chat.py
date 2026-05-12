@@ -13,6 +13,19 @@ class CapturingLLMService:
         return "Captured persona reply"
 
 
+def _prepare_confirmed_voice_profile(client, auth_headers, persona_id):
+    create_response = client.post(f"/api/v1/personas/{persona_id}/voice-profile", headers=auth_headers)
+    assert create_response.status_code == 201
+    evaluate_response = client.post(f"/api/v1/personas/{persona_id}/voice-profile/evaluate", headers=auth_headers)
+    assert evaluate_response.status_code == 200
+    confirm_response = client.patch(
+        f"/api/v1/personas/{persona_id}/voice-profile/user-confirm",
+        headers=auth_headers,
+        json={"review_note": "sounds good"},
+    )
+    assert confirm_response.status_code == 200
+
+
 def test_create_chat(client, auth_headers, created_chat):
     response = client.get(f"/api/v1/personas/{created_chat['persona_id']}/chats", headers=auth_headers)
     assert response.status_code == 200
@@ -34,6 +47,7 @@ def test_send_persona_message(client, auth_headers, created_chat):
 
 
 def test_send_persona_message_can_generate_audio(client, auth_headers, created_chat):
+    _prepare_confirmed_voice_profile(client, auth_headers, created_chat["persona_id"])
     response = client.post(
         f"/api/v1/chats/{created_chat['id']}/messages",
         json={
@@ -103,6 +117,7 @@ def test_send_persona_audio_message_uses_stt_and_creates_reply(client, auth_head
 
 
 def test_send_persona_audio_message_can_generate_audio_reply(client, auth_headers, created_chat):
+    _prepare_confirmed_voice_profile(client, auth_headers, created_chat["persona_id"])
     response = client.post(
         f"/api/v1/chats/{created_chat['id']}/audio",
         data={"generate_audio": "true"},

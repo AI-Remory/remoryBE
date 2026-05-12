@@ -19,6 +19,7 @@ from app.schemas.target_verification import (
     VerificationRequestRejectRequest,
     VerificationRequestRevokeRequest,
 )
+from app.schemas.persona import PersonaVoiceProfileResponse, VoiceProfileReviewRequest
 from app.schemas.usage_limit import (
     UsageLimitResponse,
     PersonaUsageLimitResponse,
@@ -30,6 +31,7 @@ from app.services.audit_log_service import AuditLogService
 from app.services.deletion_service import deletion_service
 from app.services.rate_limit_service import RateLimitService
 from app.services.verification_service import verification_service
+from app.services.persona_service import persona_service
 from app.utils.exceptions import RemoryException, to_http_exception
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -643,4 +645,75 @@ async def take_action_on_report(
         return report_service.take_action_on_report(db, admin_user.id, report_id, admin_note)
     except RemoryException as e:
         raise to_http_exception(e)
+
+
+@router.get("/voice-profiles/{voice_profile_id}", response_model=PersonaVoiceProfileResponse)
+async def get_voice_profile_admin(
+    voice_profile_id: int,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Get a voice profile detail (admin only)."""
+    try:
+        return persona_service.admin_get_voice_profile(db, voice_profile_id)
+    except RemoryException as e:
+        raise to_http_exception(e)
+
+
+@router.patch("/voice-profiles/{voice_profile_id}/approve", response_model=PersonaVoiceProfileResponse)
+async def approve_voice_profile_admin(
+    voice_profile_id: int,
+    request_data: VoiceProfileReviewRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Approve a READY voice profile (admin only)."""
+    try:
+        return persona_service.admin_approve_voice_profile(
+            db,
+            voice_profile_id,
+            admin_user.id,
+            review_note=request_data.review_note,
+        )
+    except RemoryException as e:
+        raise to_http_exception(e)
+
+
+@router.patch("/voice-profiles/{voice_profile_id}/reject", response_model=PersonaVoiceProfileResponse)
+async def reject_voice_profile_admin(
+    voice_profile_id: int,
+    request_data: VoiceProfileReviewRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Reject a voice profile (admin only)."""
+    try:
+        return persona_service.admin_reject_voice_profile(
+            db,
+            voice_profile_id,
+            admin_user.id,
+            review_note=request_data.review_note,
+        )
+    except RemoryException as e:
+        raise to_http_exception(e)
+
+
+@router.patch("/voice-profiles/{voice_profile_id}/revoke", response_model=PersonaVoiceProfileResponse)
+async def revoke_voice_profile_admin(
+    voice_profile_id: int,
+    request_data: VoiceProfileReviewRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Revoke voice profile usage (admin only)."""
+    try:
+        return persona_service.admin_revoke_voice_profile(
+            db,
+            voice_profile_id,
+            admin_user.id,
+            review_note=request_data.review_note,
+        )
+    except RemoryException as e:
+        raise to_http_exception(e)
+
 

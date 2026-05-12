@@ -22,8 +22,17 @@ def test_create_and_get_persona_voice_profile(client, auth_headers, created_pers
     assert payload["persona_id"] == created_persona["id"]
     assert payload["target_id"] == created_persona["target_id"]
     assert payload["provider"] == "mock"
-    assert payload["status"] == "READY"
+    assert payload["status"] in {"PENDING", "NEEDS_MORE_SAMPLES"}
+    assert payload["review_status"] == "NOT_REVIEWED"
     assert payload["reference_audio_count"] >= 1
+
+    evaluate_response = client.post(
+        f"/api/v1/personas/{created_persona['id']}/voice-profile/evaluate",
+        headers=auth_headers,
+    )
+    assert evaluate_response.status_code == 200
+    evaluated = evaluate_response.json()
+    assert evaluated["status"] in {"READY", "NEEDS_MORE_SAMPLES", "FAILED"}
 
     get_response = client.get(
         f"/api/v1/personas/{created_persona['id']}/voice-profile",
@@ -109,6 +118,29 @@ def test_create_voice_profile_requires_reference_audio(client, auth_headers, cre
     )
 
     assert response.status_code == 400
+
+
+def test_user_can_confirm_ready_voice_profile(client, auth_headers, created_persona):
+    create_response = client.post(
+        f"/api/v1/personas/{created_persona['id']}/voice-profile",
+        headers=auth_headers,
+    )
+    assert create_response.status_code == 201
+
+    evaluate_response = client.post(
+        f"/api/v1/personas/{created_persona['id']}/voice-profile/evaluate",
+        headers=auth_headers,
+    )
+    assert evaluate_response.status_code == 200
+    assert evaluate_response.json()["status"] == "READY"
+
+    confirm_response = client.patch(
+        f"/api/v1/personas/{created_persona['id']}/voice-profile/user-confirm",
+        headers=auth_headers,
+        json={"review_note": "looks good"},
+    )
+    assert confirm_response.status_code == 200
+    assert confirm_response.json()["review_status"] == "USER_CONFIRMED"
 
 
 def test_other_user_cannot_access_persona(client, created_persona, second_user_headers):

@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     # Voice Cloning
     VOICE_CLONE_PROVIDER: str = "mock"
     OPENVOICE_CHECKPOINT_PATH: str = ""
+    VOICE_SAMPLE_MIN_COUNT: int = 1
+    VOICE_SAMPLE_MIN_TOTAL_DURATION_MS: int = 100
+    VOICE_SAMPLE_MIN_FILE_SIZE_BYTES: int = 1024
+    VOICE_PROFILE_MIN_QUALITY_SCORE: float = 0.5
 
     # File Upload
     UPLOAD_DIR: str = "./uploads"

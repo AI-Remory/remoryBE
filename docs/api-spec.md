@@ -1734,23 +1734,50 @@ Frontend contract:
 
 ### Persona Voice Profile
 
-Voice profile endpoints are available for the voice cloning MVP.
+Voice cloning is gated by quality evaluation and review workflow.
 
 #### Create Voice Profile
 
 - Method: `POST`
 - URL: `/api/v1/personas/{persona_id}/voice-profile`
 - Auth: Yes
-- Description: Creates or requests creation of a voice profile for the persona by using voice media attached to the persona target.
+- Description: Creates or refreshes profile metadata from target voice samples. This call does **not** immediately make voice cloning usable.
 
 Rules:
 
 - The authenticated user must own the persona.
-- The persona target must have at least one voice media item.
-- If no reference voice media exists, the API returns `400`.
-- In `ENVIRONMENT=test`, `MockVoiceCloneService` creates a `READY` profile immediately.
-- With a real OpenVoice provider, the profile can be created as `PENDING`.
-- Service-layer TODO checkpoints remain for target verification approval and explicit voice cloning consent logs.
+- `TargetVerificationRequest` for the persona target must be `APPROVED`.
+- Active consent is required for `voice_upload_consent` and `voice_cloning_consent`.
+- At least one target voice media (`audio/*`) is required.
+- Too-small files are excluded from evaluation input.
+- Initial status is usually `PENDING` or `NEEDS_MORE_SAMPLES`.
+
+#### Evaluate Voice Profile
+
+- Method: `POST`
+- URL: `/api/v1/personas/{persona_id}/voice-profile/evaluate`
+- Auth: Yes
+- Description: Runs sample quality checks and creates sample output audio.
+
+Quality checks:
+
+- `validate_minimum_sample_count`
+- `validate_minimum_total_duration`
+- `estimate_noise_score` (MVP heuristic/mock)
+- quality threshold check (configurable via settings)
+
+Result behavior:
+
+- Pass: status becomes `READY` (or provider-specific transitional status)
+- Fail: status becomes `NEEDS_MORE_SAMPLES` or `FAILED`
+
+#### User Confirm Voice Profile
+
+- Method: `PATCH`
+- URL: `/api/v1/personas/{persona_id}/voice-profile/user-confirm`
+- Auth: Yes
+- Body: `{ "review_note": "optional" }`
+- Description: End-user confirms a `READY` profile for voice usage.
 
 Example:
 
@@ -1776,10 +1803,19 @@ Important response fields:
   "provider": "mock",
   "model_name": null,
   "status": "READY",
+  "review_status": "USER_CONFIRMED",
   "reference_audio_count": 1,
   "reference_audio_total_seconds": null,
+  "reference_audio_paths_json": ["uploads/voices/1/sample.mp3"],
+  "total_reference_duration_ms": 3200,
   "voice_profile_path": "uploads/voice_profiles/...",
   "sample_audio_path": "uploads/voice_samples/...",
+  "quality_score": 0.82,
+  "similarity_score": 0.90,
+  "noise_score": 0.20,
+  "reviewed_by": null,
+  "reviewed_at": "2026-05-12T00:00:00",
+  "review_note": "voice sounds accurate",
   "error_message": null,
   "created_at": "2026-05-12T00:00:00",
   "updated_at": "2026-05-12T00:00:00"
@@ -1789,9 +1825,31 @@ Important response fields:
 Supported statuses:
 
 - `PENDING`
+- `PROCESSING`
 - `READY`
 - `FAILED`
-- `DISABLED`
+- `NEEDS_MORE_SAMPLES`
+- `REVOKED`
+
+Supported review statuses:
+
+- `NOT_REVIEWED`
+- `USER_CONFIRMED`
+- `ADMIN_APPROVED`
+- `REJECTED`
+
+#### Admin Voice Profile Review
+
+- `GET /api/v1/admin/voice-profiles/{voice_profile_id}`
+- `PATCH /api/v1/admin/voice-profiles/{voice_profile_id}/approve`
+- `PATCH /api/v1/admin/voice-profiles/{voice_profile_id}/reject`
+- `PATCH /api/v1/admin/voice-profiles/{voice_profile_id}/revoke`
+
+`approve` sets review status to `ADMIN_APPROVED`.
+
+`reject` sets review status to `REJECTED` and status to `FAILED`.
+
+`revoke` sets status to `REVOKED` (voice cloning usage blocked).
 
 ---
 
@@ -1908,6 +1966,10 @@ Voice profile / voice cloning requires:
 
 - `voice_upload_consent`
 - `voice_cloning_consent`
+- target verification approved (`APPROVED`)
+- target voice media exists
+- `PersonaVoiceProfile.status == READY`
+- `PersonaVoiceProfile.review_status in (USER_CONFIRMED, ADMIN_APPROVED)`
 
 Sharing requires:
 

@@ -235,7 +235,7 @@ def uploaded_media(client, auth_headers, created_target, target_media_consents):
     voice = client.post(
         f"/api/v1/targets/{target_id}/media",
         data={"media_type": "voice"},
-        files={"file": ("voice.mp3", b"fake audio content", "audio/mpeg")},
+        files={"file": ("voice.mp3", b"a" * 100000, "audio/mpeg")},
         headers=auth_headers,
     )
     assert voice.status_code == 201
