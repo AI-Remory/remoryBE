@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Optional
 
 from sqlalchemy import select, func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from fastapi import Request
 
@@ -29,7 +30,8 @@ class AuditLogService:
         description: Optional[str] = None,
         metadata: Optional[dict] = None,
         request: Optional[Request] = None,
-    ) -> AuditLog:
+        raise_on_failure: bool = True,
+    ) -> Optional[AuditLog]:
         """Create an audit log entry.
 
         Args:
@@ -42,9 +44,13 @@ class AuditLogService:
             metadata: Additional metadata (will be JSON-encoded). Sensitive fields like
                      passwords, tokens are excluded.
             request: Optional FastAPI Request object to extract IP and user agent
+            raise_on_failure: Re-raise DB errors after rollback. Admin/security
+                operations should keep this True so audit failure is visible.
+                General user workflows that must continue can pass False.
 
         Returns:
-            Created AuditLog object
+            Created AuditLog object, or None when raise_on_failure is False and
+            the audit INSERT fails.
         """
         # Sanitize metadata to remove sensitive fields
         if metadata:
@@ -67,11 +73,17 @@ class AuditLogService:
             ip_address=ip_address,
             user_agent=user_agent,
         )
-        db.add(audit_log)
-        db.flush()
-        db.commit()
-        db.refresh(audit_log)
-        return audit_log
+        try:
+            db.add(audit_log)
+            db.flush()
+            db.commit()
+            db.refresh(audit_log)
+            return audit_log
+        except SQLAlchemyError:
+            db.rollback()
+            if raise_on_failure:
+                raise
+            return None
 
     @staticmethod
     def _sanitize_metadata(metadata: dict) -> dict:

@@ -394,3 +394,7 @@ WS /api/v1/ws/personas/{persona_id}/voice?token=<access_token>
 | `DeletionStatus` | `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED` |
 | `GroupMemberRole` | `OWNER`, `MEMBER`, `VIEWER` |
 | `ReportStatus` | `PENDING`, `REVIEWING`, `RESOLVED`, `REJECTED`, `ACTION_TAKEN` |
+
+## Consent audit log
+
+`POST /api/v1/consents`가 `ConsentLog`를 생성하면 `audit_logs`에도 `CONSENT_CREATED` 감사 로그가 함께 기록된다. 감사 로그 INSERT가 실패해도 일반 사용자 동의 생성 응답은 유지되며, 실패한 감사 로그 트랜잭션은 rollback되어 같은 DB session이 `PendingRollback` 상태로 남지 않는다.

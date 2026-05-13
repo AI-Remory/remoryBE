@@ -200,3 +200,22 @@ Nginx `client_max_body_size`와 `MAX_UPLOAD_SIZE`를 함께 확인한다.
 ### WebSocket 연결 실패
 
 Nginx `Upgrade`, `Connection`, `proxy_http_version 1.1` 설정과 access token query parameter를 확인한다.
+
+### Alembic head인데 테이블이 없을 때
+
+`alembic current`가 `head`를 가리키고 `alembic upgrade head`가 실행할 작업이 없다고 하더라도, 과거 migration의 `upgrade()`와 `downgrade()`가 불일치하면 실제 테이블이 누락될 수 있다. 예를 들어 `audit_logs` 테이블은 다음 순서로 확인한다.
+
+```bash
+alembic heads
+alembic current
+alembic upgrade head
+mysql -u root -p remory_db -e "SHOW TABLES LIKE 'audit_logs';"
+```
+
+테이블이 없으면 `migrations/versions`에서 관련 revision을 열어 `upgrade()`에 `op.create_table("audit_logs", ...)`가 있는지, `downgrade()`에만 `op.drop_table("audit_logs")`가 있는지 확인한다.
+
+```bash
+grep -R "audit_logs" migrations/versions
+```
+
+이미 운영 DB의 `alembic_version`이 최신 head라면 기존에 적용된 migration 파일을 수정하지 않는다. 현재 head 뒤에 보정용 새 revision을 추가하고 `alembic upgrade head`로 누락 테이블을 생성한다.

@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from typing import Optional
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.consent import ConsentLog, ConsentType
@@ -113,24 +114,26 @@ class ConsentService:
             details=details,
         )
         db.add(consent)
-        db.commit()
-        db.refresh(consent)
-
-        # Create audit log
         try:
-            from app.services.audit_log_service import AuditLogService
-            AuditLogService.create_audit_log(
-                db=db,
-                action=AuditAction.CONSENT_CREATED,
-                actor_user_id=user_id,
-                target_type=AuditTargetType.CONSENT,
-                target_id=consent.id,
-                description=f"Consent created for {consent_type.value}",
-                metadata={"consent_type": consent_type.value, "consent_id": consent.id},
-            )
-        except Exception:
-            # Don't let audit log creation failures break the main flow
-            pass
+            db.commit()
+            db.refresh(consent)
+        except SQLAlchemyError:
+            db.rollback()
+            raise
+
+        # Consent creation is a general user workflow: audit is best-effort and
+        # AuditLogService rolls back its failed INSERT so this session remains usable.
+        from app.services.audit_log_service import AuditLogService
+        AuditLogService.create_audit_log(
+            db=db,
+            action=AuditAction.CONSENT_CREATED,
+            actor_user_id=user_id,
+            target_type=AuditTargetType.CONSENT,
+            target_id=consent.id,
+            description=f"Consent created for {consent_type.value}",
+            metadata={"consent_type": consent_type.value, "consent_id": consent.id},
+            raise_on_failure=False,
+        )
 
         return consent
 
@@ -162,24 +165,25 @@ class ConsentService:
         consent.is_agreed = False
         consent.is_consented = False
         consent.revoked_at = ConsentService._now()
-        db.commit()
-        db.refresh(consent)
-
-        # Create audit log
         try:
-            from app.services.audit_log_service import AuditLogService
-            AuditLogService.create_audit_log(
-                db=db,
-                action=AuditAction.CONSENT_REVOKED,
-                actor_user_id=user_id,
-                target_type=AuditTargetType.CONSENT,
-                target_id=consent.id,
-                description=f"Consent revoked for {consent.consent_type.value}",
-                metadata={"consent_type": consent.consent_type.value, "consent_id": consent.id},
-            )
-        except Exception:
-            # Don't let audit log creation failures break the main flow
-            pass
+            db.commit()
+            db.refresh(consent)
+        except SQLAlchemyError:
+            db.rollback()
+            raise
+
+        # Consent revocation follows the same general-user policy as creation.
+        from app.services.audit_log_service import AuditLogService
+        AuditLogService.create_audit_log(
+            db=db,
+            action=AuditAction.CONSENT_REVOKED,
+            actor_user_id=user_id,
+            target_type=AuditTargetType.CONSENT,
+            target_id=consent.id,
+            description=f"Consent revoked for {consent.consent_type.value}",
+            metadata={"consent_type": consent.consent_type.value, "consent_id": consent.id},
+            raise_on_failure=False,
+        )
 
         return consent
 

@@ -1,6 +1,7 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -36,6 +37,12 @@ def create_consent(
         )
     except RemoryException as e:
         raise to_http_exception(e)
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error while creating consent",
+        )
 
 
 @router.get("/consents", response_model=List[ConsentResponse])
