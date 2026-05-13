@@ -1,6 +1,7 @@
 """FastAPI 메인 애플리케이션"""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.core.settings import settings
 from app.api.v1.router import api_v1_router
 
@@ -23,6 +24,9 @@ app.add_middleware(
 
 # 라우터 등록
 app.include_router(api_v1_router, prefix="/api")
+
+if settings.allow_public_uploads_static:
+    app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
 # 헬스 체크
 @app.get("/health")

@@ -130,6 +130,8 @@ sudo systemctl status remory-backend
 
 ## Nginx
 
+운영 환경에서는 `/uploads`를 public static으로 열지 않는다. Nginx에 `location /uploads { alias ... }`를 추가하지 말고, 사진/음성/관계 입증 파일은 백엔드의 인증된 파일 API로만 제공한다.
+
 ```nginx
 server {
     listen 80;
@@ -169,6 +171,8 @@ sudo systemctl reload nginx
 - `SECRET_KEY` 운영용 난수로 교체
 - `CORS_ORIGINS`에 실제 frontend origin만 설정
 - `uploads/*` 디렉터리 생성 및 쓰기 권한 확인
+- `ENVIRONMENT=production`에서 public `/uploads` static mount 비활성화 확인
+- Nginx에 `/uploads` alias/location을 열지 않았는지 확인
 - `alembic current`, `alembic upgrade head` 성공
 - `curl http://127.0.0.1:8000/health` 성공
 - Nginx WebSocket upgrade 설정 확인

@@ -207,6 +207,7 @@ POST /api/v1/auth/register
 | `POST /api/v1/targets/{target_id}/verification-requests` | 필요 | multipart: `verification_type_param*`, `applicant_note`, `file*` | `201 VerificationRequestResponse` |
 | `GET /api/v1/targets/{target_id}/verification-requests?skip=0&limit=20` | 필요 | query | `PaginatedResponse[VerificationRequestResponse]` |
 | `GET /api/v1/verification-requests/{request_id}` | 필요 | path | `VerificationRequestDetailResponse` |
+| `GET /api/v1/admin/verification-requests/{request_id}/file` | ADMIN | path | file response |
 
 `verification_type_param`은 `FAMILY_RELATION_CERTIFICATE`, `ID_CARD`, `SELF_DECLARATION`, `OTHER` 중 하나다. 생성 조건과 관리자 검수 흐름은 [05-verification-consent-flow.md](05-verification-consent-flow.md)를 본다.
 
@@ -216,9 +217,10 @@ POST /api/v1/auth/register
 | --- | --- | --- | --- |
 | `POST /api/v1/targets/{target_id}/media` | 필요 | multipart: `media_type*`, `file*` | `201 MediaUploadResponse` |
 | `GET /api/v1/targets/{target_id}/media` | 필요 | path | `TargetMediaResponse[]` |
+| `GET /api/v1/targets/{target_id}/media/{media_id}/file` | 필요 | path | file response |
 | `DELETE /api/v1/media/{media_id}` | 필요 | path | `MediaDeleteResponse(message)` |
 
-`media_type`은 `image` 또는 `voice`다.
+`media_type`은 `image` 또는 `voice`다. `TargetMediaResponse.file_api_url`로 파일을 조회한다. `file_path`는 과거 클라이언트 호환용 deprecated 필드이며, 프론트가 URL을 직접 조합하면 안 된다.
 
 ## Persona
 
@@ -243,8 +245,9 @@ POST /api/v1/auth/register
 | `POST /api/v1/chats/{chat_id}/messages` | 필요 | `PersonaMessageCreateRequest` | `201 PersonaMessagePairResponse` |
 | `POST /api/v1/chats/{chat_id}/audio` | 필요 | multipart audio file | `201 PersonaMessagePairResponse` |
 | `GET /api/v1/chats/{chat_id}/messages` | 필요 | path | `PersonaMessageResponse[]` |
+| `GET /api/v1/chats/{chat_id}/messages/{message_id}/audio` | 필요 | path | audio file response |
 
-`PersonaMessagePairResponse`는 `{ "user_message": PersonaMessageResponse, "persona_message": PersonaMessageResponse }`다.
+`PersonaMessagePairResponse`는 `{ "user_message": PersonaMessageResponse, "persona_message": PersonaMessageResponse }`다. 오디오 파일은 `audio_api_url`로 조회한다. `audio_file_path`는 과거 클라이언트 호환용 deprecated 필드다.
 
 ## Interview
 
@@ -264,7 +267,23 @@ POST /api/v1/auth/register
 | `POST /api/v1/photo-memories` | 필요 | multipart: `title*`, `description`, `taken_at`, `location`, `file*` | `201 PhotoMemoryResponse` |
 | `GET /api/v1/photo-memories` | 필요 | 없음 | `PhotoMemoryResponse[]` |
 | `GET /api/v1/photo-memories/{photo_memory_id}` | 필요 | path | `PhotoMemoryResponse` |
+| `GET /api/v1/photo-memories/{photo_memory_id}/image` | 필요 | path | image file response |
 | `DELETE /api/v1/photo-memories/{photo_memory_id}` | 필요 | path | `PhotoMemoryDeleteResponse(message)` |
+
+`PhotoMemoryResponse.image_api_url`로 이미지를 조회한다. `file_path`는 과거 클라이언트 호환용 deprecated 필드이며, `/uploads/...` public URL이나 `API_BASE_URL + file_path` 방식은 사용하지 않는다.
+
+## Protected Files
+
+운영 환경에서 `/uploads`는 public static으로 열지 않는다. 민감 파일은 모두 인증된 API가 DB 소유권 또는 ADMIN 권한을 확인한 뒤 `FileResponse`로 반환한다.
+
+| API | 권한 | 파일 |
+| --- | --- | --- |
+| `GET /api/v1/photo-memories/{photo_memory_id}/image` | 본인 PhotoMemory | 이미지 |
+| `GET /api/v1/targets/{target_id}/media/{media_id}/file` | 본인 Target의 media | 이미지/음성 |
+| `GET /api/v1/admin/verification-requests/{request_id}/file` | ADMIN | 관계 입증 파일 |
+| `GET /api/v1/chats/{chat_id}/messages/{message_id}/audio` | 본인 Chat message | 음성 |
+
+파일 경로는 서버에서 `settings.UPLOAD_DIR` 하위인지 검증한다. 업로드 디렉터리 밖 경로는 `403`, 파일이 없으면 `404`, 인증 실패는 `401`, 권한 없음은 `403`으로 처리한다.
 
 ## StoryBook
 

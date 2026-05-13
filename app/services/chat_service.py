@@ -304,5 +304,21 @@ class ChatService:
             .order_by(PersonaMessage.created_at.asc(), PersonaMessage.id.asc())
         ).scalars().all()
 
+    @staticmethod
+    def get_message_audio(db: Session, user_id: int, chat_id: int, message_id: int) -> PersonaMessage:
+        ChatService._get_owned_chat(db, chat_id, user_id)
+        message = db.execute(
+            select(PersonaMessage).where(
+                PersonaMessage.id == message_id,
+                PersonaMessage.chat_id == chat_id,
+                PersonaMessage.deleted_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        if not message:
+            raise NotFoundException("PersonaMessage", message_id)
+        if not message.audio_file_path:
+            raise NotFoundException("PersonaMessage audio", message_id)
+        return message
+
 
 chat_service = ChatService()

@@ -123,6 +123,82 @@ form.append("description", "Family birthday photo");
 form.append("file", file);
 ```
 
+## Protected file rendering
+
+민감 파일은 public `/uploads`로 접근하지 않는다. `<img src={API_BASE_URL + file_path}>`, `<audio src={API_BASE_URL + audio_file_path}>`처럼 DB의 경로를 직접 URL로 조합하는 방식은 금지한다. `image_api_url`, `file_api_url`, `audio_api_url`을 사용하고, Authorization header가 필요한 파일은 `fetch`로 blob을 받은 뒤 `URL.createObjectURL`로 렌더링한다.
+
+공통 helper:
+
+```ts
+async function fetchProtectedBlob(apiUrl: string) {
+  const token = localStorage.getItem("access_token");
+  const response = await fetch(apiUrl, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (response.status === 401) throw new Error("LOGIN_REQUIRED");
+  if (response.status === 403) throw new Error("FORBIDDEN");
+  if (response.status === 404) throw new Error("FILE_NOT_FOUND");
+  if (!response.ok) throw new Error("FILE_LOAD_FAILED");
+
+  return response.blob();
+}
+```
+
+PhotoMemory 이미지:
+
+```tsx
+function PhotoMemoryImage({ imageApiUrl }: { imageApiUrl: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+
+    fetchProtectedBlob(imageApiUrl)
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        setSrc(objectUrl);
+      })
+      .catch(() => setSrc(null));
+
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [imageApiUrl]);
+
+  if (!src) return null;
+  return <img src={src} alt="" />;
+}
+```
+
+PersonaMessage audio:
+
+```tsx
+function MessageAudio({ audioApiUrl }: { audioApiUrl: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+
+    fetchProtectedBlob(audioApiUrl)
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        setSrc(objectUrl);
+      })
+      .catch(() => setSrc(null));
+
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [audioApiUrl]);
+
+  if (!src) return null;
+  return <audio controls src={src} />;
+}
+```
+
+401은 refresh token 재발급 또는 로그인 이동, 403은 권한 없음 안내, 404는 파일 없음 상태로 처리한다.
+
 ## 화면별 API 연결
 
 | 화면 | API 순서 |

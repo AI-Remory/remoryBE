@@ -126,6 +126,20 @@ class MediaService:
         return media
 
     @staticmethod
+    def get_target_media_file(db: Session, user_id: int, target_id: int, media_id: int) -> TargetMedia:
+        target_service.get_target_by_id(db, target_id, user_id)
+        media = db.execute(
+            select(TargetMedia).where(
+                TargetMedia.id == media_id,
+                TargetMedia.target_id == target_id,
+                TargetMedia.is_deleted == False,
+            )
+        ).scalar_one_or_none()
+        if not media:
+            raise NotFoundException("TargetMedia", media_id)
+        return media
+
+    @staticmethod
     def delete_media(db: Session, user_id: int, media_id: int) -> None:
         """미디어 삭제 (파일 + DB)"""
         media = MediaService._resolve_media_for_user(db, user_id, media_id)

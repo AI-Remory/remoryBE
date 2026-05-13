@@ -14,6 +14,7 @@ from app.schemas.chat import (
     PersonaMessageResponse,
 )
 from app.services.chat_service import chat_service
+from app.services.protected_file_service import ProtectedFileService
 from app.utils.exceptions import RemoryException, to_http_exception
 
 router = APIRouter(tags=["chat"])
@@ -33,6 +34,25 @@ async def create_persona_chat(
     """Create a chat for a persona owned by the current user."""
     try:
         return chat_service.create_chat(db, current_user.id, persona_id, chat_data)
+    except RemoryException as e:
+        raise to_http_exception(e)
+
+
+@router.get("/chats/{chat_id}/messages/{message_id}/audio")
+async def get_chat_message_audio(
+    chat_id: int,
+    message_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return a chat message audio file after chat ownership checks."""
+    try:
+        message = chat_service.get_message_audio(db, current_user.id, chat_id, message_id)
+        return ProtectedFileService.response(
+            message.audio_file_path,
+            "PersonaMessage audio",
+            message.id,
+        )
     except RemoryException as e:
         raise to_http_exception(e)
 

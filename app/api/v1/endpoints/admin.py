@@ -32,6 +32,7 @@ from app.services.deletion_service import deletion_service
 from app.services.rate_limit_service import RateLimitService
 from app.services.verification_service import verification_service
 from app.services.persona_service import persona_service
+from app.services.protected_file_service import ProtectedFileService
 from app.utils.exceptions import RemoryException, to_http_exception
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -93,9 +94,10 @@ async def get_admin_verification_file(
 ):
     try:
         request = verification_service.get_verification_request(db, request_id)
-        path = verification_service.resolve_submitted_file_path(request)
-        return FileResponse(
-            path,
+        return ProtectedFileService.response(
+            request.submitted_file_path,
+            "Verification file",
+            request.id,
             media_type=request.mime_type,
             filename=request.original_filename,
         )
@@ -715,5 +717,4 @@ async def revoke_voice_profile_admin(
         )
     except RemoryException as e:
         raise to_http_exception(e)
-
 

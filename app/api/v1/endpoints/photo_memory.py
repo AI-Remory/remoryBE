@@ -15,6 +15,7 @@ from app.schemas.photo_memory import (
     PhotoMemoryResponse,
 )
 from app.services.photo_memory_service import photo_memory_service
+from app.services.protected_file_service import ProtectedFileService
 from app.utils.exceptions import RemoryException, to_http_exception
 
 router = APIRouter(prefix="/photo-memories", tags=["photo-memory"])
@@ -68,6 +69,26 @@ async def get_photo_memory(
     """Get one current-user photo memory."""
     try:
         return photo_memory_service.get_photo_memory(db, current_user.id, photo_memory_id)
+    except RemoryException as e:
+        raise to_http_exception(e)
+
+
+@router.get("/{photo_memory_id}/image")
+async def get_photo_memory_image(
+    photo_memory_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the current user's photo memory image after ownership checks."""
+    try:
+        photo_memory = photo_memory_service.get_photo_memory(db, current_user.id, photo_memory_id)
+        return ProtectedFileService.response(
+            photo_memory.file_path,
+            "PhotoMemory image",
+            photo_memory.id,
+            media_type=photo_memory.mime_type,
+            filename=photo_memory.original_filename,
+        )
     except RemoryException as e:
         raise to_http_exception(e)
 

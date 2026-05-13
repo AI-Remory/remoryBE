@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     # File Upload
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_SIZE: int = 52428800  # 50MB
+    ENABLE_PUBLIC_UPLOADS_STATIC: bool = False
 
     # Rate Limiting & Usage Limits
     MONTHLY_USER_VOICE_GENERATION_LIMIT: int = 1000  # Voice synthesis calls per month
@@ -71,6 +72,14 @@ class Settings(BaseSettings):
     def DATABASE_URL(self) -> str:
         """MySQL 연결 문자열 생성"""
         return f"mysql+pymysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DB}?charset=utf8mb4"
+
+    @property
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT.lower() == "production"
+
+    @property
+    def allow_public_uploads_static(self) -> bool:
+        return self.DEBUG and not self.is_production and self.ENABLE_PUBLIC_UPLOADS_STATIC
 
 
 settings = Settings()
