@@ -1,5 +1,38 @@
 # 08. Deployment
 
+## Schema Drift Audit Checklist (2026-05-14)
+
+Run this checklist before production deploy if model or migration changed:
+
+```bash
+alembic heads
+alembic current
+alembic upgrade head
+```
+
+```bash
+python - <<'PY'
+from sqlalchemy import create_engine, inspect
+from app.core.settings import settings
+from app.models import Base
+
+engine = create_engine(settings.DATABASE_URL)
+ins = inspect(engine)
+model_tables = set(Base.metadata.tables.keys())
+db_tables = set(ins.get_table_names())
+print("MODEL_ONLY", sorted(model_tables - db_tables))
+print("DB_ONLY", sorted(db_tables - model_tables))
+PY
+```
+
+```bash
+alembic revision --autogenerate -m "schema_drift_check_tmp"
+```
+
+`schema_drift_check_tmp` should not contain unexpected bulk changes. If it is empty (`upgrade(): pass`), delete that temp revision file immediately.
+
+Never drop the whole DB to resolve drift in production. Add forward-fix revisions on top of current head.
+
 ## 목차
 
 - [기준 환경](#기준-환경)
