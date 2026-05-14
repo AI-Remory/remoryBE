@@ -3,6 +3,7 @@
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status as http_status
 from fastapi.responses import FileResponse
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -366,6 +367,7 @@ async def list_usage_limits(
     try:
         result = RateLimitService.list_user_usage_limits(
             db,
+            user_id=user_id,
             skip=(page - 1) * size,
             limit=size,
         )
@@ -396,10 +398,16 @@ async def list_usage_limits(
             limit=size,
             items=items_response,
         )
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Usage limit data is temporarily unavailable.",
+        ) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
+            detail="Failed to list usage limits.",
         ) from exc
 
 
@@ -436,10 +444,16 @@ async def update_user_usage_limit(
             "created_at": usage_limit.created_at,
             "updated_at": usage_limit.updated_at,
         }
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Usage limit update failed.",
+        ) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
+            detail="Failed to update user usage limit.",
         ) from exc
 
 
@@ -472,10 +486,16 @@ async def update_persona_usage_limit(
             "created_at": usage_limit.created_at,
             "updated_at": usage_limit.updated_at,
         }
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Persona usage limit update failed.",
+        ) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
+            detail="Failed to update persona usage limit.",
         ) from exc
 
 
@@ -502,10 +522,16 @@ async def list_rate_limit_events(
             limit=size,
             items=result["items"],
         )
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Rate limit event data is temporarily unavailable.",
+        ) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
+            detail="Failed to list rate limit events.",
         ) from exc
 
 
@@ -717,4 +743,3 @@ async def revoke_voice_profile_admin(
         )
     except RemoryException as e:
         raise to_http_exception(e)
-

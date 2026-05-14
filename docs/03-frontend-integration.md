@@ -302,3 +302,13 @@ function ProtectedAudio({ audioApiUrl, token }: { audioApiUrl: string; token: st
 - `POST /reports` 생성 status code가 `201`이 아닌 `200`
 - `InterviewService`의 `PHOTO_MEMORY` 분기에서 `photo_memory_id` 필수 여부가 TODO로 남아 있음
 - VoiceCall `persona_audio.audio_url`는 운영의 public uploads 정책과 정합성 재검토 필요
+## Usage Limit Integration Note (2026-05-14)
+- Admin usage APIs:
+  - `GET /api/v1/admin/usage-limits`
+  - `PATCH /api/v1/admin/users/{user_id}/usage-limit`
+  - `PATCH /api/v1/admin/personas/{persona_id}/usage-limit`
+  - `GET /api/v1/admin/rate-limit-events`
+- For `GET /api/v1/admin/usage-limits?user_id={id}`, backend may create the current month row on first read.
+- Frontend should treat `period_ym` as the display key (`YYYY-MM`).
+- Frontend should not assume usage rows already exist for every user/persona.
+- If API returns `500` with safe detail (`Usage limit data is temporarily unavailable.`), show a generic retry message and keep prior UI state.

@@ -1,5 +1,7 @@
 """Tests for rate limiting and usage limits."""
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.models.usage_limit import UsageLimit, PersonaUsageLimit, RateLimitEvent
 from app.services.rate_limit_service import RateLimitService
 from tests.conftest import TestingSessionLocal
@@ -167,4 +169,88 @@ def test_persona_usage_limit_increments(admin_token, auth_headers, created_perso
         assert usage_after.voice_generation_count == count_before + 1
     finally:
         db.close()
+
+
+def test_admin_usage_limit_user_filter_creates_missing_row(admin_token, client):
+    """User filter should create current-month usage row when missing."""
+    register_response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "usage-filter-user@example.com",
+            "nickname": "usage_filter_user",
+            "password": "securepassword123",
+        },
+    )
+    assert register_response.status_code == 201
+    user_id = register_response.json()["user"]["id"]
+
+    db = TestingSessionLocal()
+    try:
+        before_count = db.query(UsageLimit).filter(UsageLimit.user_id == user_id).count()
+        assert before_count == 0
+    finally:
+        db.close()
+
+    response = client.get(
+        f"/api/v1/admin/usage-limits?user_id={user_id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] >= 1
+    assert all(item["user_id"] == user_id for item in payload["items"])
+
+    db = TestingSessionLocal()
+    try:
+        after_count = db.query(UsageLimit).filter(UsageLimit.user_id == user_id).count()
+        assert after_count >= 1
+    finally:
+        db.close()
+
+
+def test_admin_update_persona_usage_limit_creates_row_if_missing(admin_token, created_persona, client):
+    """Updating persona limit should create current-month row when missing."""
+    persona_id = created_persona["id"]
+
+    db = TestingSessionLocal()
+    try:
+        before_count = db.query(PersonaUsageLimit).filter(PersonaUsageLimit.persona_id == persona_id).count()
+        assert before_count == 0
+    finally:
+        db.close()
+
+    response = client.patch(
+        f"/api/v1/admin/personas/{persona_id}/usage-limit",
+        json={"voice_generation_limit": 99},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["persona_id"] == persona_id
+
+    db = TestingSessionLocal()
+    try:
+        after_count = db.query(PersonaUsageLimit).filter(PersonaUsageLimit.persona_id == persona_id).count()
+        assert after_count >= 1
+    finally:
+        db.close()
+
+
+def test_admin_usage_limit_endpoint_returns_safe_error_message(admin_token, client, monkeypatch):
+    """DB errors should not leak raw SQL details in usage limit endpoint."""
+
+    def _raise_sqlalchemy_error(*args, **kwargs):
+        raise SQLAlchemyError("Table 'remory_db.usage_limits' doesn't exist")
+
+    monkeypatch.setattr(
+        RateLimitService,
+        "list_user_usage_limits",
+        staticmethod(_raise_sqlalchemy_error),
+    )
+
+    response = client.get(
+        "/api/v1/admin/usage-limits",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Usage limit data is temporarily unavailable."
 

@@ -233,3 +233,13 @@
 - `POST /reports`는 생성 API지만 status code가 `200`
 - `realtime voice`는 OpenAPI 자동 문서 밖
 - `StoryVoiceNarration` 관련 HTTP endpoint 없음 (모델만 존재)
+## Usage Limit Migration Note (2026-05-14)
+- Missing tables issue was fixed by Alembic revision `c8f1d4a7b9e2` (down_revision: `a4c8e2f1b9d0`).
+- This revision creates `usage_limits`, `persona_usage_limits`, and `rate_limit_events`.
+- Model-aligned unique indexes:
+  - `ix_usage_limits_user_ym` (`user_id`, `period_ym`)
+  - `ix_persona_usage_limits_persona_ym` (`persona_id`, `period_ym`)
+- `GET /admin/usage-limits?user_id={id}` now lazily creates the current month row when missing.
+- `PATCH /admin/users/{user_id}/usage-limit` and `PATCH /admin/personas/{persona_id}/usage-limit` also create missing current month rows before update.
+- `period_ym` format is `YYYY-MM`.
+- DB internal errors are returned with safe messages, not raw SQL text.

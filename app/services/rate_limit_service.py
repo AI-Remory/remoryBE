@@ -3,7 +3,8 @@
 from datetime import UTC, datetime
 from typing import Optional, Tuple
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.settings import settings
@@ -58,8 +59,23 @@ class RateLimitService:
                 voice_call_seconds_limit=settings.MONTHLY_USER_VOICE_CALL_SECONDS_LIMIT,
             )
             db.add(usage_limit)
-            db.commit()
-            db.refresh(usage_limit)
+            try:
+                db.commit()
+                db.refresh(usage_limit)
+            except IntegrityError:
+                # Concurrent create: rollback and load the row created by another request.
+                db.rollback()
+                usage_limit = db.execute(
+                    select(UsageLimit).where(
+                        and_(
+                            UsageLimit.user_id == user_id,
+                            UsageLimit.period_ym == period_ym,
+                        )
+                    )
+                ).scalar_one()
+            except SQLAlchemyError:
+                db.rollback()
+                raise
 
         return usage_limit
 
@@ -92,8 +108,23 @@ class RateLimitService:
                 voice_call_seconds_limit=settings.MONTHLY_USER_VOICE_CALL_SECONDS_LIMIT,
             )
             db.add(usage_limit)
-            db.commit()
-            db.refresh(usage_limit)
+            try:
+                db.commit()
+                db.refresh(usage_limit)
+            except IntegrityError:
+                # Concurrent create: rollback and load the row created by another request.
+                db.rollback()
+                usage_limit = db.execute(
+                    select(PersonaUsageLimit).where(
+                        and_(
+                            PersonaUsageLimit.persona_id == persona_id,
+                            PersonaUsageLimit.period_ym == period_ym,
+                        )
+                    )
+                ).scalar_one()
+            except SQLAlchemyError:
+                db.rollback()
+                raise
 
         return usage_limit
 
@@ -156,19 +187,31 @@ class RateLimitService:
         """Increment voice generation counters."""
         usage_limit = RateLimitService._get_or_create_user_usage_limit(db, user_id)
         usage_limit.voice_generation_count += 1
-        db.commit()
+        try:
+            db.commit()
+        except SQLAlchemyError:
+            db.rollback()
+            raise
 
         if persona_id:
             persona_usage = RateLimitService._get_or_create_persona_usage_limit(db, persona_id)
             persona_usage.voice_generation_count += 1
-            db.commit()
+            try:
+                db.commit()
+            except SQLAlchemyError:
+                db.rollback()
+                raise
 
     @staticmethod
     def increment_stt(db: Session, user_id: int) -> None:
         """Increment STT request counter."""
         usage_limit = RateLimitService._get_or_create_user_usage_limit(db, user_id)
         usage_limit.stt_request_count += 1
-        db.commit()
+        try:
+            db.commit()
+        except SQLAlchemyError:
+            db.rollback()
+            raise
 
     @staticmethod
     def increment_voice_call(
@@ -180,12 +223,20 @@ class RateLimitService:
         """Increment voice call duration counters."""
         usage_limit = RateLimitService._get_or_create_user_usage_limit(db, user_id)
         usage_limit.voice_call_seconds += seconds
-        db.commit()
+        try:
+            db.commit()
+        except SQLAlchemyError:
+            db.rollback()
+            raise
 
         if persona_id:
             persona_usage = RateLimitService._get_or_create_persona_usage_limit(db, persona_id)
             persona_usage.voice_call_seconds += seconds
-            db.commit()
+            try:
+                db.commit()
+            except SQLAlchemyError:
+                db.rollback()
+                raise
 
     @staticmethod
     def record_rate_limit_event(
@@ -209,8 +260,12 @@ class RateLimitService:
             window_seconds=window_seconds,
         )
         db.add(event)
-        db.commit()
-        db.refresh(event)
+        try:
+            db.commit()
+            db.refresh(event)
+        except SQLAlchemyError:
+            db.rollback()
+            raise
         return event
 
     @staticmethod
@@ -228,14 +283,25 @@ class RateLimitService:
     @staticmethod
     def list_user_usage_limits(
         db: Session,
+        user_id: Optional[int] = None,
         skip: int = 0,
         limit: int = 20,
     ) -> dict:
         """List all user usage limits."""
-        query = select(UsageLimit).order_by(UsageLimit.created_at.desc())
-        total = len(db.execute(select(UsageLimit)).scalars().all())
+        if user_id is not None:
+            # Existing users may not have the current period row yet.
+            RateLimitService._get_or_create_user_usage_limit(db, user_id)
+
+        query = select(UsageLimit)
+        count_query = select(func.count(UsageLimit.id))
+        if user_id is not None:
+            query = query.where(UsageLimit.user_id == user_id)
+            count_query = count_query.where(UsageLimit.user_id == user_id)
+
+        query = query.order_by(UsageLimit.created_at.desc())
+        total = db.execute(count_query).scalar_one()
         items = db.execute(query.offset(skip).limit(limit)).scalars().all()
-        return {"total": total, "items": items}
+        return {"total": int(total), "items": items}
 
     @staticmethod
     def list_rate_limit_events(
@@ -246,13 +312,15 @@ class RateLimitService:
     ) -> dict:
         """List rate limit events."""
         query = select(RateLimitEvent)
-        if user_id:
+        count_query = select(func.count(RateLimitEvent.id))
+        if user_id is not None:
             query = query.where(RateLimitEvent.user_id == user_id)
+            count_query = count_query.where(RateLimitEvent.user_id == user_id)
         query = query.order_by(RateLimitEvent.created_at.desc())
 
-        total = len(db.execute(select(RateLimitEvent)).scalars().all())
+        total = db.execute(count_query).scalar_one()
         items = db.execute(query.offset(skip).limit(limit)).scalars().all()
-        return {"total": total, "items": items}
+        return {"total": int(total), "items": items}
 
     @staticmethod
     def update_user_usage_limit(
@@ -270,8 +338,12 @@ class RateLimitService:
             usage_limit.stt_request_limit = stt_request_limit
         if voice_call_seconds_limit is not None:
             usage_limit.voice_call_seconds_limit = voice_call_seconds_limit
-        db.commit()
-        db.refresh(usage_limit)
+        try:
+            db.commit()
+            db.refresh(usage_limit)
+        except SQLAlchemyError:
+            db.rollback()
+            raise
         return usage_limit
 
     @staticmethod
@@ -287,7 +359,11 @@ class RateLimitService:
             usage_limit.voice_generation_limit = voice_generation_limit
         if voice_call_seconds_limit is not None:
             usage_limit.voice_call_seconds_limit = voice_call_seconds_limit
-        db.commit()
-        db.refresh(usage_limit)
+        try:
+            db.commit()
+            db.refresh(usage_limit)
+        except SQLAlchemyError:
+            db.rollback()
+            raise
         return usage_limit
 
