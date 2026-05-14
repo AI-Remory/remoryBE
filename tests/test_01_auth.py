@@ -12,6 +12,7 @@ def test_register(client):
     assert payload["access_token"]
     assert payload["refresh_token"]
     assert payload["user"]["email"] == "register@example.com"
+    assert payload["user"]["role"] == "USER"
 
 
 def test_login(client, test_user_data):
@@ -28,3 +29,10 @@ def test_me(client, auth_headers, test_user_data):
     response = client.get("/api/v1/auth/me", headers=auth_headers)
     assert response.status_code == 200
     assert response.json()["email"] == test_user_data["email"]
+    assert response.json()["role"] == "USER"
+
+
+def test_me_returns_admin_role(client, admin_headers):
+    response = client.get("/api/v1/auth/me", headers=admin_headers)
+    assert response.status_code == 200
+    assert response.json()["role"] == "ADMIN"
