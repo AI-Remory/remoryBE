@@ -161,7 +161,12 @@ class ChatService:
         output_path = output_dir / filename
         result = await get_voice_clone_service().synthesize_with_cloned_voice(
             reply_text,
-            {"persona_id": persona.id, "provider": profile.provider or "mock"},
+            {
+                "persona_id": persona.id,
+                "provider": profile.provider or "mock",
+                "model_name": profile.model_name,
+                "voice_profile_path": profile.voice_profile_path,
+            },
             str(output_path),
         )
         try:

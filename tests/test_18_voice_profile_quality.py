@@ -235,3 +235,44 @@ def test_voice_profile_and_synthesis_audit_logs_created(
     assert synthesized_log.json()["total"] >= 1
 
 
+def test_voice_profile_evaluate_returns_failed_when_voice_clone_provider_fails(
+    client,
+    auth_headers,
+    created_persona,
+    monkeypatch,
+):
+    class _FailingVoiceCloneService:
+        async def create_voice_profile(self, persona_id: int, reference_audio_paths: list[str]) -> dict:
+            return {
+                "persona_id": persona_id,
+                "provider": "openvoice",
+                "model_name": "openvoice-v2",
+                "status": "FAILED",
+                "voice_profile_path": None,
+                "error_message": "openvoice missing checkpoint",
+            }
+
+        async def synthesize_with_cloned_voice(self, text: str, voice_profile: dict, output_path: str):
+            raise RuntimeError("not used in this test")
+
+    monkeypatch.setattr(
+        "app.services.persona_service.get_voice_clone_service",
+        lambda: _FailingVoiceCloneService(),
+    )
+
+    create_response = client.post(
+        f"/api/v1/personas/{created_persona['id']}/voice-profile",
+        headers=auth_headers,
+    )
+    assert create_response.status_code == 201
+
+    evaluate_response = client.post(
+        f"/api/v1/personas/{created_persona['id']}/voice-profile/evaluate",
+        headers=auth_headers,
+    )
+    assert evaluate_response.status_code == 200
+    payload = evaluate_response.json()
+    assert payload["status"] == "FAILED"
+    assert payload["error_message"] == "openvoice missing checkpoint"
+
+

@@ -264,8 +264,8 @@ class PersonaService:
 
         profile = persona.voice_profile
         profile.target_id = persona.target_id
-        profile.provider = "mock"
-        profile.model_name = None
+        profile.provider = settings.VOICE_CLONE_PROVIDER
+        profile.model_name = "openvoice-v2" if settings.VOICE_CLONE_PROVIDER == "openvoice" else None
         profile.status = (
             VoiceProfileStatus.PENDING
             if sample_check.error_message is None
@@ -344,18 +344,37 @@ class PersonaService:
                 persona_id=persona.id,
                 reference_audio_paths=sample_check.reference_audio_paths,
             )
-            profile.provider = generated.get("provider") or "mock"
+            profile.provider = generated.get("provider") or settings.VOICE_CLONE_PROVIDER
             profile.model_name = generated.get("model_name")
-            provider_status = generated.get("status") or VoiceProfileStatus.READY.value
-            profile.status = VoiceProfileStatus(provider_status)
+            profile.voice_provider = profile.provider
             profile.voice_profile_path = generated.get("voice_profile_path")
             profile.error_message = generated.get("error_message")
-            profile.sample_audio_path = await voice_quality_service.generate_sample_output(
-                persona_id=persona.id,
-                voice_profile_payload={"persona_id": persona.id, "provider": profile.provider},
-            )
-            if profile.status != VoiceProfileStatus.FAILED:
-                profile.status = VoiceProfileStatus.READY
+
+            provider_status = generated.get("status") or VoiceProfileStatus.FAILED.value
+            try:
+                profile.status = VoiceProfileStatus(provider_status)
+            except ValueError:
+                profile.status = VoiceProfileStatus.FAILED
+                profile.error_message = (profile.error_message or f"Invalid provider status: {provider_status}")[:500]
+
+            if profile.status == VoiceProfileStatus.READY and profile.voice_profile_path:
+                try:
+                    profile.sample_audio_path = await voice_quality_service.generate_sample_output(
+                        persona_id=persona.id,
+                        voice_profile_payload={
+                            "persona_id": persona.id,
+                            "provider": profile.provider,
+                            "model_name": profile.model_name,
+                            "voice_profile_path": profile.voice_profile_path,
+                        },
+                    )
+                except Exception as exc:
+                    profile.status = VoiceProfileStatus.FAILED
+                    profile.error_message = str(exc)[:500] or "Sample audio generation failed"
+                    profile.sample_audio_path = None
+            else:
+                profile.sample_audio_path = None
+
             persona.is_voice_profile_created = profile.status == VoiceProfileStatus.READY
 
         profile.review_status = VoiceProfileReviewStatus.NOT_REVIEWED

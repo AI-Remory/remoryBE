@@ -45,6 +45,18 @@ class Settings(BaseSettings):
 
     # Voice Cloning
     VOICE_CLONE_PROVIDER: str = "mock"
+    OPENVOICE_CHECKPOINT_ROOT: str = "./models/openvoice"
+    OPENVOICE_CONVERTER_CONFIG_PATH: str = ""
+    OPENVOICE_CONVERTER_CHECKPOINT_PATH: str = ""
+    OPENVOICE_SOURCE_SE_PATH: str = ""
+    OPENVOICE_OUTPUT_DIR: str = "./uploads/voices/openvoice"
+    OPENVOICE_DEVICE: str = "auto"
+    OPENVOICE_WATERMARK_MESSAGE: str = "@Remory"
+    OPENVOICE_FAILOVER_TO_MOCK: bool = False
+    OPENVOICE_BASE_SPEAKER: str = "KR"
+    OPENVOICE_TTS_LANGUAGE: str = "KR"
+    OPENVOICE_TTS_SPEED: float = 1.0
+    # Deprecated legacy setting: kept for backward compatibility only.
     OPENVOICE_CHECKPOINT_PATH: str = ""
     VOICE_SAMPLE_MIN_COUNT: int = 1
     VOICE_SAMPLE_MIN_TOTAL_DURATION_MS: int = 100

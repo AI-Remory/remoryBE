@@ -1,5 +1,24 @@
 # 02. Backend API (Code-Based)
 
+## OpenVoice Voice Profile/Evaluate Flow (2026-05-15)
+- Endpoints are unchanged:
+  - `POST /api/v1/personas/{persona_id}/voice-profile`
+  - `POST /api/v1/personas/{persona_id}/voice-profile/evaluate`
+  - `PATCH /api/v1/personas/{persona_id}/voice-profile/user-confirm`
+- Security gates are unchanged and still required:
+  - approved target verification
+  - `voice_upload_consent`
+  - `voice_cloning_consent`
+- Evaluate behavior:
+  - OpenVoice provider now creates target speaker embedding at:
+    - `OPENVOICE_OUTPUT_DIR/profiles/persona_{persona_id}/target_se.pth`
+  - profile metadata json is saved in the same profile directory
+  - success => `status=READY`, `provider=openvoice`, `model_name=openvoice-v2`, `voice_profile_path` populated
+  - failure => `status=FAILED` or `NEEDS_MORE_SAMPLES` with `error_message` (max 500 chars)
+- Sample audio:
+  - evaluate generates real sample wav via OpenVoice and stores `sample_audio_path`
+  - `user-confirm` remains allowed only when `status=READY`
+
 ## 기준
 - 코드 기준: `app/api/v1/endpoints/*`, `app/schemas/*`, `app/services/*`, `app/deps.py`
 - OpenAPI와 코드가 다르면 코드 기준으로 작성

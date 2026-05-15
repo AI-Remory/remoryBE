@@ -119,12 +119,16 @@ class VoiceQualityService:
         return True, None
 
     @staticmethod
-    async def generate_sample_output(persona_id: int, voice_profile_payload: dict) -> str:
+    async def generate_sample_output(
+        persona_id: int,
+        voice_profile_payload: dict,
+        sample_text: str = "안녕하세요. 리모리 음성 샘플입니다.",
+    ) -> str:
         output_dir = Path(settings.UPLOAD_DIR) / "voices" / "samples" / str(persona_id)
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"sample_{uuid4().hex}.wav"
         result = await get_voice_clone_service().synthesize_with_cloned_voice(
-            "안녕하세요. 이 음성은 품질 평가를 위한 샘플입니다.",
+            sample_text,
             voice_profile_payload,
             str(output_path),
         )
@@ -132,5 +136,4 @@ class VoiceQualityService:
 
 
 voice_quality_service = VoiceQualityService()
-
 

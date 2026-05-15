@@ -1,5 +1,40 @@
 # 06. Realtime Voice Chat
 
+## OpenVoice Runtime Notes (2026-05-15)
+
+- Voice synthesis order at `end_utterance`:
+  1. STT transcription
+  2. LLM persona reply
+  3. OpenVoice cloned synthesis (when profile provider is `openvoice`)
+- Voice profile usage gates remain mandatory:
+  - approved verification
+  - `voice_upload_consent`
+  - `voice_cloning_consent`
+  - profile `status=READY`
+  - review status `USER_CONFIRMED` or `ADMIN_APPROVED`
+- OpenVoice configuration required in runtime:
+  - `OPENVOICE_CONVERTER_CONFIG_PATH`
+  - `OPENVOICE_CONVERTER_CHECKPOINT_PATH`
+  - `OPENVOICE_SOURCE_SE_PATH`
+  - `OPENVOICE_OUTPUT_DIR`
+- Production behavior:
+  - do not silently hide OpenVoice failures with mock synthesis
+  - websocket responds with error when synthesis fails
+- CPU/GPU:
+  - `OPENVOICE_DEVICE=auto` chooses CUDA when available, otherwise CPU
+  - set `OPENVOICE_DEVICE=cuda` only when CUDA runtime is verified
+
+### OpenVoice Checkpoint Setup
+
+1. Install OpenVoice runtime package and torch compatible with your CUDA/CPU.
+2. Download OpenVoice V2 checkpoints.
+3. Configure:
+   - `OPENVOICE_CONVERTER_CONFIG_PATH`
+   - `OPENVOICE_CONVERTER_CHECKPOINT_PATH`
+   - `OPENVOICE_SOURCE_SE_PATH`
+4. Ensure files exist before calling evaluate API.
+5. If paths are invalid, evaluate returns `FAILED` with `error_message`.
+
 ## 목차
 
 - [Endpoint](#endpoint)

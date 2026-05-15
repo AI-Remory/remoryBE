@@ -373,12 +373,18 @@ class RealtimeVoiceService:
         output_path = RealtimeVoiceService._build_output_path(user_id)
         audio_file_path: str | None = None
         audio_url: str | None = None
+        profile = None
 
         try:
             profile = persona_service.ensure_voice_clone_usage_allowed(db, persona, user_id)
             cloned = await get_voice_clone_service().synthesize_with_cloned_voice(
                 reply_text,
-                {"persona_id": persona.id, "provider": profile.provider or "mock"},
+                {
+                    "persona_id": persona.id,
+                    "provider": profile.provider or "mock",
+                    "model_name": profile.model_name,
+                    "voice_profile_path": profile.voice_profile_path,
+                },
                 str(output_path),
             )
             audio_file_path = cloned.audio_file_path.replace("\\", "/")
@@ -395,7 +401,10 @@ class RealtimeVoiceService:
                 )
             except Exception:
                 pass
-        except Exception:
+        except Exception as exc:
+            provider = (profile.provider if profile else "").lower() if profile else ""
+            if provider == "openvoice" and not settings.OPENVOICE_FAILOVER_TO_MOCK:
+                raise ValidationException(f"Voice synthesis failed: {str(exc)[:500]}")
             try:
                 tts_result = await get_tts_service().synthesize(reply_text, str(output_path))
                 audio_file_path = tts_result.audio_file_path.replace("\\", "/")

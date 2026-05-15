@@ -1,5 +1,19 @@
 # 03. Frontend Integration (Code-Based)
 
+## OpenVoice Integration Notes (2026-05-15)
+- Voice profile API flow is unchanged:
+  1. `POST /api/v1/personas/{persona_id}/voice-profile`
+  2. `POST /api/v1/personas/{persona_id}/voice-profile/evaluate`
+  3. `PATCH /api/v1/personas/{persona_id}/voice-profile/user-confirm`
+- Frontend should check:
+  - `status` (`READY`, `FAILED`, `NEEDS_MORE_SAMPLES`, ...)
+  - `error_message` when not `READY`
+  - `sample_audio_path` after evaluate success
+- `user-confirm` should be enabled only when `status === "READY"`.
+- For realtime voice call:
+  - backend requires READY + (`USER_CONFIRMED` or `ADMIN_APPROVED`)
+  - if OpenVoice synthesis fails in production/no-failover mode, backend returns websocket error instead of hidden mock audio.
+
 ## 1) Base URL / WS URL
 - REST Base URL: `/api/v1`
 - Health URL: `/health`
